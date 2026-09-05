@@ -1,0 +1,3 @@
+# Replace www-data with the user running PHP-FPM for MiniPanel.
+# Permit the fixed agent only; never permit bash, php, or arbitrary commands.
+www-data ALL=(root) NOPASSWD: /usr/local/bin/minipanel-agent *

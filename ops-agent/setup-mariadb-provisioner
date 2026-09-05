@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run once as root on the VPS. Creates /etc/minipanel/mariadb-provisioner.cnf.
+set -euo pipefail
+
+read -r -p 'MariaDB host [127.0.0.1]: ' database_host
+database_host="${database_host:-127.0.0.1}"
+read -r -p 'MariaDB port [3306]: ' database_port
+database_port="${database_port:-3306}"
+read -r -p 'Provisioning username: ' database_user
+read -r -s -p 'Provisioning password: ' database_password
+echo
+
+[[ "$database_host" =~ ^[A-Za-z0-9._:-]+$ ]] || { echo 'Invalid host' >&2; exit 64; }
+[[ "$database_port" =~ ^[0-9]{2,5}$ ]] || { echo 'Invalid port' >&2; exit 64; }
+[[ "$database_user" =~ ^[A-Za-z0-9_]+$ ]] || { echo 'Invalid username' >&2; exit 64; }
+[[ "$database_password" != *$'\n'* ]] || { echo 'Password cannot contain a newline' >&2; exit 64; }
+
+install -d -m 0700 -o root -g root /etc/minipanel
+umask 077
+{
+  printf '[client]\n'
+  printf 'host=%s\nport=%s\nuser=%s\npassword="%s"\n' "$database_host" "$database_port" "$database_user" "${database_password//\"/\\\"}"
+} > /etc/minipanel/mariadb-provisioner.cnf
+chown root:root /etc/minipanel/mariadb-provisioner.cnf
+chmod 0600 /etc/minipanel/mariadb-provisioner.cnf
+echo 'MariaDB provisioner configuration saved with mode 0600.'

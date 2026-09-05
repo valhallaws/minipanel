@@ -1,0 +1,608 @@
+#!/usr/bin/env bash
+# Install as /usr/local/bin/minipanel-agent (root:root, 0750).
+# This is deliberately an allow-list. Never accept a shell command from the panel.
+set -euo pipefail
+
+action="${1:-}"; site_root="${2:-}"; domain="${3:-}"; repository="${4:-}"
+branch="${5:-main}"; php_version="${6:-8.3}"; queue_enabled="${7:-0}"; scheduler_enabled="${8:-1}"; runtime="${9:-laravel}"; php_extensions="${10:-}"
+extra_arguments=("${@:11}")
+site_user="mp_${domain//./_}"
+nginx_file="/etc/nginx/sites-available/${domain}"
+service_file="/etc/systemd/system/minipanel-${domain}.service"
+timer_file="/etc/systemd/system/minipanel-${domain}.timer"
+key_directory="/etc/minipanel/deploy-keys"
+key_file="$key_directory/$domain"
+alias_file="/etc/minipanel/aliases/$domain"
+nginx_snippet="/etc/nginx/snippets/minipanel-${domain}.conf"
+
+fail() { echo "$1" >&2; exit 64; }
+if [[ "$action" == 'configure-mariadb' ]]; then
+  IFS= read -r database_host; IFS= read -r database_port; IFS= read -r database_user; IFS= read -r database_password
+  [[ "$database_host" =~ ^[A-Za-z0-9._:-]+$ ]] || fail 'Invalid MariaDB host'
+  [[ "$database_port" =~ ^[0-9]{2,5}$ ]] || fail 'Invalid MariaDB port'
+  [[ "$database_user" =~ ^[A-Za-z0-9_]+$ ]] || fail 'Invalid MariaDB username'
+  [[ "$database_password" != *$'\n'* ]] || fail 'Invalid MariaDB password'
+  install -d -m 0700 -o root -g root /etc/minipanel
+  umask 077
+  { printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword="%s"\n' "$database_host" "$database_port" "$database_user" "${database_password//\"/\\\"}"; } > /etc/minipanel/mariadb-provisioner.cnf
+  chown root:root /etc/minipanel/mariadb-provisioner.cnf; chmod 0600 /etc/minipanel/mariadb-provisioner.cnf
+  echo 'MariaDB provisioner configured'; exit 0
+fi
+case "$action" in provision|deploy|issue-ssl|inspect|artisan|composer|npm|write-env|write-nginx-config|create-deploy-key|remove-deploy-key|backup|restore-backup|health|dns-check|logs|add-alias|remove-alias|restart-queue|rollback|configure-queue|remove-queue|suspend-site|resume-site|delete-site|file-list|file-read|file-download|file-write|file-upload|file-mkdir|file-move|file-delete) ;; *) fail 'Action not allowed' ;; esac
+[[ "$site_root" == "/var/www/$domain" ]] || fail 'Invalid site root'
+[[ "$domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] || fail 'Invalid domain'
+[[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || fail 'Invalid branch'
+[[ "$php_version" =~ ^8\.[234]$ ]] || fail 'Unsupported PHP version'
+[[ "$queue_enabled" =~ ^[01]$ && "$scheduler_enabled" =~ ^[01]$ ]] || fail 'Invalid service setting'
+[[ "$runtime" =~ ^(laravel|static)$ ]] || fail 'Invalid runtime'
+[[ -z "$repository" || "$repository" =~ ^https://[^[:space:]]+$ || "$repository" =~ ^git@[A-Za-z0-9.-]+:[A-Za-z0-9._/-]+\.git$ || "$repository" =~ ^ssh://[^[:space:]]+$ ]] || fail 'Invalid repository URL'
+(( ${#extra_arguments[@]} <= 20 )) || fail 'Too many arguments'
+for argument in "${extra_arguments[@]}"; do (( ${#argument} <= 512 )) || fail 'Argument too long'; done
+
+safe_relative_path() {
+  local input="${1:-}" part normalized='' IFS='/'
+  input="${input#/}"; input="${input%/}"
+  [[ -n "$input" && "$input" != '.' ]] || { printf '.'; return; }
+  read -r -a parts <<< "$input"
+  for part in "${parts[@]}"; do
+    [[ "$part" =~ ^[A-Za-z0-9][A-Za-z0-9._\ -]{0,127}$ && "$part" != '.' && "$part" != '..' ]] || fail 'Invalid file path'
+    normalized+="${normalized:+/}$part"
+  done
+  printf '%s' "$normalized"
+}
+
+safe_site_path() {
+  local relative current part IFS='/'
+  relative="$(safe_relative_path "${1:-}")"
+  [[ -d "$site_root" && ! -L "$site_root" ]] || fail 'Site root is unavailable'
+  current="$site_root"
+  if [[ "$relative" != '.' ]]; then
+    read -r -a parts <<< "$relative"
+    for part in "${parts[@]}"; do
+      current+="/$part"
+      [[ ! -L "$current" ]] || fail 'Symbolic links are not supported by File Manager'
+    done
+  fi
+  printf '%s' "$current"
+}
+
+create_services() {
+  systemctl daemon-reload
+  if [[ "$queue_enabled" == '1' ]]; then
+    cat > "$service_file" <<EOF
+[Unit]
+Description=MiniPanel Laravel queue for $domain
+After=network.target
+[Service]
+Type=simple
+User=$site_user
+WorkingDirectory=$site_root
+ExecStart=/usr/bin/php$php_version artisan queue:work --sleep=3 --tries=3 --max-time=3600
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable --now "minipanel-${domain}.service"
+  fi
+  if [[ "$scheduler_enabled" == '1' ]]; then
+    cat > "$timer_file" <<EOF
+[Unit]
+Description=MiniPanel scheduler for $domain
+[Timer]
+OnCalendar=*:*:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+    cat > "/etc/systemd/system/minipanel-${domain}-schedule.service" <<EOF
+[Service]
+Type=oneshot
+User=$site_user
+WorkingDirectory=$site_root
+ExecStart=/usr/bin/php$php_version artisan schedule:run --no-interaction
+EOF
+    systemctl daemon-reload
+    systemctl enable --now "minipanel-${domain}.timer"
+  fi
+}
+
+ensure_php_extensions() {
+  [[ "$runtime" == 'laravel' ]] || return 0
+  local packages=("php${php_version}-fpm" "php${php_version}-cli") extension package
+  IFS=',' read -r -a extensions <<< "$php_extensions"
+  for extension in "${extensions[@]}"; do
+    [[ -z "$extension" ]] && continue
+    case "$extension" in bcmath|curl|mbstring|mysql|xml|zip|gd|intl|redis|soap|imagick) ;; *) fail "PHP extension not allowed: $extension" ;; esac
+    package="$extension"; [[ "$extension" == 'xml' ]] && package='xml'
+    packages+=("php${php_version}-${package}")
+  done
+  (( ${#packages[@]} > 0 )) || return 0
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+  systemctl restart "php${php_version}-fpm"
+}
+
+git_as_site() {
+  if [[ -f "$key_file" ]]; then
+    sudo -u "$site_user" env "GIT_SSH_COMMAND=ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" git "$@"
+  else
+    sudo -u "$site_user" git "$@"
+  fi
+}
+
+update_server_names() {
+  install -d -m 0755 -o root -g root /etc/minipanel/aliases
+  local aliases=''
+  [[ -f "$alias_file" ]] && aliases=" $(tr '\n' ' ' < "$alias_file")"
+  sed -i -E "s|^[[:space:]]*server_name .*;|    server_name $domain$aliases;|" "$nginx_file"
+  nginx -t && systemctl reload nginx
+}
+
+stop_site_services() {
+  systemctl stop "minipanel-${domain}.service" "minipanel-${domain}.timer" 2>/dev/null || true
+  local unit
+  for unit in /etc/systemd/system/minipanel-"$domain"-queue-*.service; do
+    [[ -e "$unit" ]] || continue
+    systemctl stop "$(basename "$unit" .service)" 2>/dev/null || true
+  done
+}
+
+restore_site_services() {
+  local unit
+  [[ -f "$service_file" ]] && systemctl start "minipanel-${domain}.service" 2>/dev/null || true
+  [[ -f "$timer_file" ]] && systemctl start "minipanel-${domain}.timer" 2>/dev/null || true
+  for unit in /etc/systemd/system/minipanel-"$domain"-queue-*.service; do
+    [[ -e "$unit" ]] || continue
+    systemctl start "$(basename "$unit" .service)" 2>/dev/null || true
+  done
+}
+
+restore_laravel_site() {
+  [[ -f "$site_root/artisan" ]] && sudo -u "$site_user" "/usr/bin/php$php_version" "$site_root/artisan" up --no-interaction 2>/dev/null || true
+  restore_site_services
+}
+
+run_post_deploy_commands() {
+  local line command
+  local -a command_parts
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" =~ ^(php\ artisan|composer|npm)([[:space:]]+[A-Za-z0-9_.,:@=+/-]+)*$ ]] || fail 'Invalid post-deploy command'
+
+    IFS=' ' read -r -a command_parts <<< "$line"
+    (( ${#command_parts[@]} >= 2 )) || fail 'Post-deploy command requires an action'
+    echo "+ $line"
+    case "${command_parts[0]}" in
+      php)
+        [[ "${command_parts[1]:-}" == 'artisan' && -f "$site_root/artisan" ]] || fail 'Laravel Artisan is unavailable'
+        sudo -u "$site_user" "/usr/bin/php$php_version" "$site_root/artisan" "${command_parts[@]:2}"
+        ;;
+      composer)
+        sudo -u "$site_user" composer --working-dir="$site_root" "${command_parts[@]:1}"
+        ;;
+      npm)
+        sudo -u "$site_user" npm --prefix "$site_root" "${command_parts[@]:1}"
+        ;;
+    esac
+  done
+}
+
+case "$action" in
+  provision)
+    ensure_php_extensions
+    id "$site_user" &>/dev/null || useradd --system --create-home --shell /usr/sbin/nologin "$site_user"
+    install -d -o "$site_user" -g www-data -m 0750 "$site_root"
+    install -d -m 0755 -o root -g root /etc/nginx/snippets
+    : > "$nginx_snippet"; chown root:root "$nginx_snippet"; chmod 0644 "$nginx_snippet"
+    cat > "$nginx_file" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $domain;
+    root $site_root/$([[ "$runtime" == 'laravel' ]] && echo public || echo dist);
+    index index.php;
+    client_max_body_size 32m;
+    location / { try_files \$uri \$uri/ /index.php?\$query_string; }
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php$php_version-fpm.sock;
+    }
+    location ~ /\. { deny all; }
+    include $nginx_snippet;
+}
+EOF
+    ln -sfn "$nginx_file" "/etc/nginx/sites-enabled/$domain"
+    nginx -t && systemctl reload nginx
+    systemctl daemon-reload
+    echo "Provisioned Nginx and application user for $domain"
+    ;;
+  deploy)
+    [[ -n "$repository" ]] || fail 'No repository configured for this site'
+    deploy_script="$(cat)"
+    custom_deploy_script='0'
+    if printf '%s\n' "$deploy_script" | grep -qEv '^[[:space:]]*(#|$)'; then custom_deploy_script='1'; fi
+    was_laravel='0'
+    if [[ "$runtime" == 'laravel' && -f "$site_root/artisan" ]]; then
+      was_laravel='1'
+      stop_site_services
+      sudo -u "$site_user" "/usr/bin/php$php_version" "$site_root/artisan" down --retry=60 --no-interaction || true
+      trap restore_laravel_site EXIT
+    fi
+    [[ -f "$site_root/artisan" || -f "$site_root/package.json" ]] || git_as_site clone --branch "$branch" --single-branch -- "$repository" "$site_root"
+    git_as_site -C "$site_root" fetch --prune origin "$branch"
+    git_as_site -C "$site_root" reset --hard "origin/$branch"
+    if [[ "$runtime" == 'laravel' ]]; then
+      if [[ "$custom_deploy_script" == '1' ]]; then
+        # A first deployment needs Composer once to boot Laravel and generate APP_KEY.
+        if [[ ! -f "$site_root/vendor/autoload.php" ]]; then
+          sudo -u "$site_user" composer install --no-dev --prefer-dist --optimize-autoloader --working-dir="$site_root"
+          [[ -f "$site_root/.env" ]] || { cp "$site_root/.env.example" "$site_root/.env"; chown "$site_user":www-data "$site_root/.env"; }
+          sudo -u "$site_user" /usr/bin/php$php_version "$site_root/artisan" key:generate --force --no-interaction
+        fi
+        printf '%s\n' "$deploy_script" | run_post_deploy_commands
+      else
+        sudo -u "$site_user" composer install --no-dev --prefer-dist --optimize-autoloader --working-dir="$site_root"
+        [[ -f "$site_root/.env" ]] || { cp "$site_root/.env.example" "$site_root/.env"; chown "$site_user":www-data "$site_root/.env"; sudo -u "$site_user" /usr/bin/php$php_version "$site_root/artisan" key:generate --force --no-interaction; }
+        sudo -u "$site_user" /usr/bin/php$php_version "$site_root/artisan" migrate --force --no-interaction
+        sudo -u "$site_user" /usr/bin/php$php_version "$site_root/artisan" optimize
+      fi
+      chgrp -R www-data "$site_root/storage" "$site_root/bootstrap/cache"
+      chmod -R g+rwX "$site_root/storage" "$site_root/bootstrap/cache"
+      if [[ "$was_laravel" == '1' ]]; then
+        restore_laravel_site
+        trap - EXIT
+      fi
+      create_services
+    else
+      sudo -u "$site_user" npm --prefix "$site_root" ci
+      sudo -u "$site_user" npm --prefix "$site_root" run build
+    fi
+    echo "Deployment complete for $domain"
+    ;;
+  issue-ssl)
+    command -v certbot >/dev/null || { echo 'Install certbot and python3-certbot-nginx first.' >&2; exit 69; }
+    expected_ip="${extra_arguments[0]:-}"
+    if [[ -n "$expected_ip" ]]; then
+      [[ "$expected_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail 'Invalid expected public IP'
+      command -v dig >/dev/null || { echo 'Install dnsutils before automatic SSL checks.' >&2; exit 69; }
+      dns_answers="$(dig +short A "$domain" | tr -d '\r')"
+      if ! printf '%s\n' "$dns_answers" | grep -Fxq "$expected_ip"; then
+        echo "DNS pending: $domain does not yet resolve to $expected_ip. SSL will retry." >&2
+        exit 75
+      fi
+    fi
+    certbot --nginx --non-interactive --agree-tos --redirect -d "$domain"
+    echo "SSL certificate issued for $domain"
+    ;;
+  inspect)
+    [[ -d "$site_root" ]] || fail 'Project does not exist yet'
+    echo '__MINIPANEL_ARTISAN__'
+    if [[ -f "$site_root/artisan" ]]; then sudo -u "$site_user" /usr/bin/php$php_version "$site_root/artisan" list --format=json || echo '{}'; else echo '{}'; fi
+    echo '__MINIPANEL_NPM__'
+    if [[ -f "$site_root/package.json" ]] && command -v node >/dev/null; then node -e 'const p=require(process.argv[1]); console.log(JSON.stringify(p.scripts||{}))' "$site_root/package.json" || echo '{}'; else echo '{}'; fi
+    echo '__MINIPANEL_ENV__'
+    [[ -f "$site_root/.env" ]] && base64 < "$site_root/.env" | tr -d '\n' || true
+    echo
+    echo '__MINIPANEL_SERVICES__'
+    printf '{"queue":"%s","scheduler":"%s"}\n' "$(systemctl is-active "minipanel-${domain}.service" 2>/dev/null || true)" "$(systemctl is-active "minipanel-${domain}.timer" 2>/dev/null || true)"
+    ;;
+  artisan)
+    [[ -f "$site_root/artisan" ]] || fail 'Laravel was not detected'
+    artisan_command="${extra_arguments[0]:-}"
+    [[ "$artisan_command" =~ ^[a-zA-Z0-9:_-]+$ ]] || fail 'Invalid Artisan command'
+    sudo -u "$site_user" /usr/bin/php$php_version "$site_root/artisan" "${extra_arguments[@]}"
+    ;;
+  composer)
+    (( ${#extra_arguments[@]} > 0 )) || fail 'Composer command is required'
+    for argument in "${extra_arguments[@]}"; do [[ "$argument" =~ ^[A-Za-z0-9_.,:@=+/-]+$ ]] || fail 'Invalid Composer argument'; done
+    sudo -u "$site_user" composer --working-dir="$site_root" "${extra_arguments[@]}"
+    ;;
+  npm)
+    (( ${#extra_arguments[@]} > 0 )) || fail 'NPM command is required'
+    for argument in "${extra_arguments[@]}"; do [[ "$argument" =~ ^[A-Za-z0-9_.,:@=+/-]+$ ]] || fail 'Invalid NPM argument'; done
+    sudo -u "$site_user" npm --prefix "$site_root" "${extra_arguments[@]}"
+    ;;
+  write-env)
+    [[ -d "$site_root" ]] || fail 'Project does not exist yet'
+    umask 0077
+    head -c 1048576 > "$site_root/.env"
+    chown "$site_user":www-data "$site_root/.env"
+    chmod 0640 "$site_root/.env"
+    echo 'Environment updated'
+    ;;
+  write-nginx-config)
+    install -d -m 0755 -o root -g root /etc/nginx/snippets
+    grep -qF "include $nginx_snippet;" "$nginx_file" || sed -i "\$i\\    include $nginx_snippet;" "$nginx_file"
+    temporary_snippet="$(mktemp /etc/nginx/snippets/minipanel.XXXXXX)"
+    head -c 50000 > "$temporary_snippet"
+    chown root:root "$temporary_snippet"; chmod 0644 "$temporary_snippet"
+    previous_snippet="${nginx_snippet}.previous"
+    [[ -f "$nginx_snippet" ]] && cp "$nginx_snippet" "$previous_snippet" || : > "$previous_snippet"
+    mv "$temporary_snippet" "$nginx_snippet"
+    if nginx -t; then rm -f "$previous_snippet"; systemctl reload nginx; echo 'Nginx configuration applied'; else mv "$previous_snippet" "$nginx_snippet"; nginx -t && systemctl reload nginx; echo 'Nginx configuration rejected and reverted' >&2; exit 78; fi
+    ;;
+  create-deploy-key)
+    [[ "${extra_arguments[0]:-}" == '' || "${extra_arguments[0]:-}" == 'rotate' ]] || fail 'Invalid key operation'
+    install -d -m 0711 -o root -g root "$key_directory"
+    if [[ "${extra_arguments[0]:-}" == 'rotate' ]]; then rm -f "$key_file" "$key_file.pub"; fi
+    [[ -f "$key_file" ]] || ssh-keygen -q -t ed25519 -N '' -C "minipanel:$domain" -f "$key_file"
+    chown "$site_user":www-data "$key_file" "$key_file.pub"; chmod 0600 "$key_file"; chmod 0644 "$key_file.pub"
+    cat "$key_file.pub"
+    ;;
+  remove-deploy-key)
+    rm -f "$key_file" "$key_file.pub"
+    echo 'Deploy key removed from VPS'
+    ;;
+  backup)
+    install -d -m 0750 -o root -g root /var/backups/minipanel
+    backup_directory="/var/backups/minipanel/${domain}-$(date +%Y%m%d-%H%M%S)"
+    install -d -m 0700 -o root -g root "$backup_directory"
+    tar -C /var/www -czf "$backup_directory/files.tar.gz" "${domain}"
+    if [[ "$runtime" == 'laravel' && -f "$site_root/artisan" ]]; then
+      defaults_file="$(mktemp /tmp/minipanel-db.XXXXXX)"
+      chown "$site_user":www-data "$defaults_file"; chmod 0600 "$defaults_file"
+      sudo -u "$site_user" /usr/bin/php$php_version -r '
+        require $argv[1]."/vendor/autoload.php";
+        $app = require $argv[1]."/bootstrap/app.php";
+        $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+        $connection = config("database.connections.".config("database.default"));
+        if (!in_array($connection["driver"] ?? "", ["mysql", "mariadb"], true)) exit(10);
+        $lines = ["[client]", "host=".($connection["host"] ?? "127.0.0.1"), "port=".($connection["port"] ?? 3306), "user=".($connection["username"] ?? ""), "password=".($connection["password"] ?? "")];
+        if (!empty($connection["unix_socket"])) $lines[] = "socket=".$connection["unix_socket"];
+        file_put_contents($argv[2], implode("\n", $lines)."\n");
+        echo $connection["database"] ?? "";
+      ' "$site_root" "$defaults_file" > "$backup_directory/database-name"
+      database_name="$(cat "$backup_directory/database-name")"
+      rm -f "$backup_directory/database-name"
+      if [[ -n "$database_name" ]]; then
+        dump_command="$(command -v mariadb-dump || command -v mysqldump || true)"
+        [[ -n "$dump_command" ]] || { rm -f "$defaults_file"; echo 'MariaDB/MySQL dump utility not installed.' >&2; exit 69; }
+        "$dump_command" --defaults-extra-file="$defaults_file" --single-transaction --routines --events --databases "$database_name" | gzip > "$backup_directory/database.sql.gz"
+      fi
+      rm -f "$defaults_file"
+    fi
+    backup_file="${backup_directory}.tar.gz"
+    tar -C /var/backups/minipanel -czf "$backup_file" "$(basename "$backup_directory")"
+    rm -rf "$backup_directory"
+    echo "$backup_file"
+    ;;
+  restore-backup)
+    [[ "${extra_arguments[0]:-}" == "RESTAURAR $domain" ]] || fail 'Restore confirmation does not match'
+    backup_file="${extra_arguments[1]:-}"
+    [[ "$backup_file" =~ ^/var/backups/minipanel/${domain}-[0-9]{8}-[0-9]{6}\.tar\.gz$ && -f "$backup_file" ]] || fail 'Backup file is not valid for this site'
+    restore_directory="$(mktemp -d /var/backups/minipanel/restore.XXXXXX)"
+    cleanup_restore() { rm -rf "$restore_directory"; }
+    trap cleanup_restore EXIT
+    tar -xzf "$backup_file" -C "$restore_directory" --no-same-owner --no-same-permissions
+    payload_directory="$(find "$restore_directory" -mindepth 1 -maxdepth 1 -type d -name "${domain}-*" -print -quit)"
+    [[ -n "$payload_directory" && -f "$payload_directory/files.tar.gz" ]] || fail 'Backup payload is incomplete'
+    while IFS= read -r archive_path; do [[ "$archive_path" == "$domain" || "$archive_path" == "$domain/"* ]] || fail 'Backup contains an unsafe file path'; done < <(tar -tzf "$payload_directory/files.tar.gz")
+    pre_restore_file="/var/backups/minipanel/${domain}-pre-restore-$(date +%Y%m%d-%H%M%S).tar.gz"
+    [[ -d "$site_root" ]] && tar -C /var/www -czf "$pre_restore_file" "$domain"
+    systemctl stop "minipanel-${domain}.service" "minipanel-${domain}.timer" 2>/dev/null || true
+    for unit_path in /etc/systemd/system/minipanel-"$domain"-queue-*.service; do [[ -e "$unit_path" ]] && systemctl stop "$(basename "$unit_path")" || true; done
+    rm -rf "$site_root"
+    tar -xzf "$payload_directory/files.tar.gz" -C /var/www --no-same-owner --no-same-permissions
+    [[ -d "$site_root" ]] || fail 'Backup did not restore the site directory'
+    chown -R "$site_user":www-data "$site_root"
+    if [[ -f "$payload_directory/database.sql.gz" ]]; then
+      [[ -f /etc/minipanel/mariadb-provisioner.cnf ]] || fail 'MariaDB provisioner is not configured'
+      database_client="$(command -v mariadb || command -v mysql || true)"; [[ -n "$database_client" ]] || fail 'MariaDB client is not installed'
+      gzip -cd "$payload_directory/database.sql.gz" | "$database_client" --defaults-extra-file=/etc/minipanel/mariadb-provisioner.cnf
+    fi
+    nginx -t && systemctl reload nginx
+    [[ -f "$service_file" ]] && systemctl start "minipanel-${domain}.service" || true
+    [[ -f "$timer_file" ]] && systemctl start "minipanel-${domain}.timer" || true
+    echo "Backup restored for $domain. Previous files: ${pre_restore_file:-none}"
+    ;;
+  file-list)
+    relative_path="$(safe_relative_path "${extra_arguments[0]:-.}")"
+    target_path="$(safe_site_path "$relative_path")"
+    [[ -d "$target_path" ]] || fail 'Directory does not exist'
+    sudo -u "$site_user" find "$target_path" -mindepth 1 -maxdepth 1 -printf '%y\t%f\t%s\t%T@\n' | sort
+    ;;
+  file-read)
+    relative_path="$(safe_relative_path "${extra_arguments[0]:-}")"
+    [[ "$relative_path" != '.' ]] || fail 'Select a file'
+    target_path="$(safe_site_path "$relative_path")"
+    [[ -f "$target_path" && ! -L "$target_path" ]] || fail 'File does not exist'
+    maximum_bytes=1048576
+    file_size="$(sudo -u "$site_user" wc -c < "$target_path")"
+    (( file_size <= maximum_bytes )) || fail "File is larger than the ${maximum_bytes}-byte limit"
+    sudo -u "$site_user" base64 < "$target_path" | tr -d '\n'
+    ;;
+  file-download)
+    relative_path="$(safe_relative_path "${extra_arguments[0]:-}")"
+    download_name="${extra_arguments[1]:-}"
+    [[ "$relative_path" != '.' ]] || fail 'Select a file'
+    [[ "$download_name" =~ ^[A-Za-z0-9-]{36}$ ]] || fail 'Invalid download token'
+    target_path="$(safe_site_path "$relative_path")"
+    [[ -f "$target_path" && ! -L "$target_path" ]] || fail 'File does not exist'
+    [[ -r /etc/minipanel/download-root && -r /etc/minipanel/panel-user && -r /etc/minipanel/file-transfer-max-bytes ]] || fail 'File transfer storage is not configured'
+    download_root="$(< /etc/minipanel/download-root)"; panel_user="$(< /etc/minipanel/panel-user)"; maximum_bytes="$(< /etc/minipanel/file-transfer-max-bytes)"
+    [[ "$download_root" =~ ^/var/lib/minipanel/downloads$ && "$panel_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$maximum_bytes" =~ ^[0-9]+$ ]] || fail 'File transfer configuration is invalid'
+    [[ -d "$download_root" && ! -L "$download_root" ]] || fail 'Download storage is unavailable'
+    file_size="$(sudo -u "$site_user" wc -c < "$target_path")"
+    (( file_size <= maximum_bytes )) || fail "File is larger than the ${maximum_bytes}-byte limit"
+    find "$download_root" -type f -mmin +30 -delete
+    temporary_download="$(mktemp "$download_root/.minipanel-download.XXXXXX")"
+    sudo -u "$site_user" cat -- "$target_path" > "$temporary_download"
+    panel_group="$(id -gn "$panel_user")"
+    chown "$panel_user":"$panel_group" "$temporary_download"; chmod 0640 "$temporary_download"
+    mv -- "$temporary_download" "$download_root/$download_name"
+    echo 'Download ready'
+    ;;
+  file-write)
+    relative_path="$(safe_relative_path "${extra_arguments[0]:-}")"
+    [[ "$relative_path" != '.' ]] || fail 'Select a file'
+    target_path="$(safe_site_path "$relative_path")"
+    parent_path="$(dirname "$target_path")"
+    [[ -d "$parent_path" && ! -L "$parent_path" && ! -d "$target_path" ]] || fail 'Destination is not writable'
+    sudo -u "$site_user" bash -c '
+      set -euo pipefail
+      parent_path="$1"; target_path="$2"
+      temporary_path="$(mktemp "$parent_path/.minipanel-write.XXXXXX")"
+      trap '\''rm -f "$temporary_path"'\'' EXIT
+      cat > "$temporary_path"
+      file_size="$(wc -c < "$temporary_path")"
+      (( file_size <= 20971520 )) || { echo "File is larger than the 20971520-byte limit" >&2; exit 65; }
+      mv -- "$temporary_path" "$target_path"
+    ' _ "$parent_path" "$target_path"
+    echo 'File saved'
+    ;;
+  file-upload)
+    relative_path="$(safe_relative_path "${extra_arguments[0]:-}")"
+    upload_relative="$(safe_relative_path "${extra_arguments[1]:-}")"
+    [[ "$relative_path" != '.' && "$upload_relative" == file-operations/* ]] || fail 'Invalid upload path'
+    target_path="$(safe_site_path "$relative_path")"
+    parent_path="$(dirname "$target_path")"
+    [[ -d "$parent_path" && ! -L "$parent_path" && ! -d "$target_path" ]] || fail 'Destination is not writable'
+    [[ -r /etc/minipanel/panel-storage-path && -r /etc/minipanel/panel-user && -r /etc/minipanel/file-transfer-max-bytes ]] || fail 'File transfer storage is not configured'
+    panel_storage_path="$(< /etc/minipanel/panel-storage-path)"; panel_user="$(< /etc/minipanel/panel-user)"; maximum_bytes="$(< /etc/minipanel/file-transfer-max-bytes)"
+    [[ "$panel_storage_path" == /var/www/*/storage/app/private && "$panel_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$maximum_bytes" =~ ^[0-9]+$ ]] || fail 'File transfer configuration is invalid'
+    source_path="$panel_storage_path/$upload_relative"
+    [[ -f "$source_path" && ! -L "$source_path" ]] || fail 'Uploaded temporary file is unavailable'
+    file_size="$(sudo -u "$panel_user" wc -c < "$source_path")"
+    (( file_size <= maximum_bytes )) || fail "File is larger than the ${maximum_bytes}-byte limit"
+    sudo -u "$panel_user" cat -- "$source_path" | sudo -u "$site_user" bash -c '
+      set -euo pipefail
+      parent_path="$1"; target_path="$2"
+      temporary_path="$(mktemp "$parent_path/.minipanel-upload.XXXXXX")"
+      trap '\''rm -f "$temporary_path"'\'' EXIT
+      cat > "$temporary_path"
+      mv -- "$temporary_path" "$target_path"
+    ' _ "$parent_path" "$target_path"
+    echo 'File uploaded'
+    ;;
+  file-mkdir)
+    relative_path="$(safe_relative_path "${extra_arguments[0]:-}")"
+    [[ "$relative_path" != '.' ]] || fail 'Select a folder name'
+    target_path="$(safe_site_path "$relative_path")"
+    [[ ! -e "$target_path" && -d "$(dirname "$target_path")" ]] || fail 'Folder already exists or parent is missing'
+    sudo -u "$site_user" mkdir -- "$target_path"
+    echo 'Folder created'
+    ;;
+  file-move)
+    source_relative="$(safe_relative_path "${extra_arguments[0]:-}")"
+    destination_relative="$(safe_relative_path "${extra_arguments[1]:-}")"
+    [[ "$source_relative" != '.' && "$destination_relative" != '.' ]] || fail 'Select source and destination'
+    source_path="$(safe_site_path "$source_relative")"; destination_path="$(safe_site_path "$destination_relative")"
+    [[ -e "$source_path" && ! -L "$source_path" && ! -e "$destination_path" && -d "$(dirname "$destination_path")" ]] || fail 'Source or destination is not valid'
+    sudo -u "$site_user" mv -- "$source_path" "$destination_path"
+    echo 'File moved'
+    ;;
+  file-delete)
+    relative_path="$(safe_relative_path "${extra_arguments[0]:-}")"
+    [[ "$relative_path" != '.' ]] || fail 'Root directory cannot be deleted'
+    target_path="$(safe_site_path "$relative_path")"
+    [[ -e "$target_path" && ! -L "$target_path" ]] || fail 'File or folder does not exist'
+    sudo -u "$site_user" rm -rf -- "$target_path"
+    echo 'File deleted'
+    ;;
+  health)
+    health_url="${extra_arguments[0]:-}"
+    [[ "$health_url" =~ ^https?://[A-Za-z0-9.-]+([/:?#][^[:space:]]*)?$ ]] || fail 'Invalid health URL'
+    curl --fail --show-error --silent --location --max-time 15 --output /dev/null --write-out 'HTTP %{http_code}' "$health_url"
+    ;;
+  dns-check)
+    command -v dig >/dev/null || { echo 'Install dnsutils to use DNS propagation checks.' >&2; exit 69; }
+    printf '{"domain":"%s","checks":[' "$domain"
+    first=1
+    for resolver in 1.1.1.1 8.8.8.8 9.9.9.9; do
+      [[ "$first" == 1 ]] || printf ','; first=0
+      ipv4="$(dig @"$resolver" +time=2 +tries=1 +short A "$domain" | paste -sd ' ' -)"
+      ipv6="$(dig @"$resolver" +time=2 +tries=1 +short AAAA "$domain" | paste -sd ' ' -)"
+      printf '{"resolver":"%s","a":"%s","aaaa":"%s"}' "$resolver" "$ipv4" "$ipv6"
+    done
+    printf ']}'
+    ;;
+  logs)
+    case "${extra_arguments[0]:-}" in
+      laravel) tail -n 250 "$site_root/storage/logs/laravel.log" ;;
+      nginx-access) tail -n 250 /var/log/nginx/access.log ;;
+      nginx-error) tail -n 250 /var/log/nginx/error.log ;;
+      queue) journalctl -u "minipanel-${domain}.service" -n 250 --no-pager ;;
+      *) fail 'Log target not allowed' ;;
+    esac
+    ;;
+  add-alias)
+    alias="${extra_arguments[0]:-}"
+    [[ "$alias" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] || fail 'Invalid alias'
+    install -d -m 0755 -o root -g root /etc/minipanel/aliases
+    touch "$alias_file"; grep -qxF "$alias" "$alias_file" || echo "$alias" >> "$alias_file"
+    update_server_names; echo "Alias added: $alias"
+    ;;
+  remove-alias)
+    alias="${extra_arguments[0]:-}"
+    [[ "$alias" =~ ^[a-z0-9.-]+\.[a-z]{2,}$ ]] || fail 'Invalid alias'
+    [[ -f "$alias_file" ]] && sed -i "/^$alias$/d" "$alias_file" || true
+    update_server_names; echo "Alias removed: $alias"
+    ;;
+  restart-queue)
+    systemctl restart "minipanel-${domain}.service"
+    echo 'Queue worker restarted'
+    ;;
+  configure-queue)
+    queue_name="${extra_arguments[0]:-}"; workers="${extra_arguments[1]:-}"; tries="${extra_arguments[2]:-}"; timeout="${extra_arguments[3]:-}"
+    [[ "$queue_name" =~ ^[A-Za-z0-9_-]{1,50}$ ]] || fail 'Invalid queue name'
+    [[ "$workers" =~ ^([1-9]|1[0-2])$ ]] || fail 'Invalid worker count'
+    [[ "$tries" =~ ^([1-9]|1[0-9]|20)$ ]] || fail 'Invalid tries'
+    [[ "$timeout" =~ ^[0-9]{2,4}$ ]] || fail 'Invalid timeout'
+    for worker in $(seq 1 "$workers"); do
+      queue_service="/etc/systemd/system/minipanel-${domain}-queue-${queue_name}-${worker}.service"
+      cat > "$queue_service" <<EOF
+[Unit]
+Description=MiniPanel queue $queue_name worker $worker for $domain
+After=network.target
+[Service]
+Type=simple
+User=$site_user
+WorkingDirectory=$site_root
+ExecStart=/usr/bin/php$php_version artisan queue:work --queue=$queue_name --sleep=3 --tries=$tries --timeout=$timeout --max-time=3600
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+EOF
+    done
+    systemctl daemon-reload
+    for worker in $(seq 1 "$workers"); do systemctl enable --now "minipanel-${domain}-queue-${queue_name}-${worker}.service"; done
+    echo "Queue $queue_name configured with $workers worker(s)"
+    ;;
+  remove-queue)
+    queue_name="${extra_arguments[0]:-}"; workers="${extra_arguments[1]:-}"
+    [[ "$queue_name" =~ ^[A-Za-z0-9_-]{1,50}$ && "$workers" =~ ^([1-9]|1[0-2])$ ]] || fail 'Invalid queue configuration'
+    for worker in $(seq 1 "$workers"); do systemctl disable --now "minipanel-${domain}-queue-${queue_name}-${worker}.service" 2>/dev/null || true; rm -f "/etc/systemd/system/minipanel-${domain}-queue-${queue_name}-${worker}.service"; done
+    systemctl daemon-reload; echo "Queue $queue_name removed"
+    ;;
+  suspend-site)
+    rm -f "/etc/nginx/sites-enabled/$domain"; systemctl stop "minipanel-${domain}.service" "minipanel-${domain}.timer" 2>/dev/null || true
+    nginx -t && systemctl reload nginx; echo "Site suspended: $domain"
+    ;;
+  resume-site)
+    [[ -f "$nginx_file" ]] || fail 'Nginx site configuration does not exist'
+    ln -sfn "$nginx_file" "/etc/nginx/sites-enabled/$domain"; nginx -t && systemctl reload nginx; echo "Site resumed: $domain"
+    ;;
+  delete-site)
+    [[ "${extra_arguments[0]:-}" == "ELIMINAR $domain" ]] || fail 'Deletion confirmation does not match'
+    [[ "$site_root" == "/var/www/$domain" ]] || fail 'Unsafe deletion target'
+    db_name=''; db_user=''
+    if [[ -f "$site_root/.env" ]]; then db_name="$(sed -nE 's/^DB_DATABASE=([^[:space:]]+).*$/\1/p' "$site_root/.env" | head -n1 | tr -d "'\"")"; db_user="$(sed -nE 's/^DB_USERNAME=([^[:space:]]+).*$/\1/p' "$site_root/.env" | head -n1 | tr -d "'\"")"; fi
+    [[ -z "$db_name" || "$db_name" =~ ^[A-Za-z0-9_]+$ ]] || fail 'Unsafe database name'; [[ -z "$db_user" || "$db_user" =~ ^[A-Za-z0-9_]+$ ]] || fail 'Unsafe database user'
+    rm -f "/etc/nginx/sites-enabled/$domain" "$nginx_file" "$nginx_snippet" "$alias_file" "$key_file" "$key_file.pub"; systemctl disable --now "minipanel-${domain}.service" "minipanel-${domain}.timer" 2>/dev/null || true; rm -f /etc/systemd/system/minipanel-"$domain"*.service /etc/systemd/system/minipanel-"$domain"*.timer; systemctl daemon-reload
+    if [[ -n "$db_name" ]]; then [[ -f /etc/minipanel/mariadb-provisioner.cnf ]] || fail 'MariaDB provisioner is not configured'; database_client="$(command -v mariadb || command -v mysql || true)"; [[ -n "$database_client" ]] || fail 'MariaDB client is not installed'; "$database_client" --defaults-extra-file=/etc/minipanel/mariadb-provisioner.cnf -e "DROP DATABASE IF EXISTS \`$db_name\`; DROP USER IF EXISTS '$db_user'@'%'; DROP USER IF EXISTS '$db_user'@'localhost';"; fi
+    rm -rf "$site_root" "/var/backups/minipanel/$domain"-*.tar.gz; id "$site_user" &>/dev/null && userdel -r "$site_user" || true; nginx -t && systemctl reload nginx; echo "Site deleted permanently: $domain"
+    ;;
+  rollback)
+    commit="${extra_arguments[0]:-}"
+    [[ "$commit" =~ ^[a-f0-9]{7,64}$ ]] || fail 'Invalid commit'
+    git_as_site -C "$site_root" reset --hard "$commit"
+    [[ "$runtime" == 'laravel' ]] && sudo -u "$site_user" /usr/bin/php$php_version "$site_root/artisan" optimize || sudo -u "$site_user" npm --prefix "$site_root" run build
+    echo "Rolled back to $commit"
+    ;;
+esac

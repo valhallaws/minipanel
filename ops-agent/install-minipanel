@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# Bootstrap MiniPanel on Ubuntu. Review and run on the intended VPS only.
+# Default mode is a dry run; pass --apply to make changes.
+set -euo pipefail
+
+apply=0
+with_firewall=0
+app_path='/var/www/minipanel'
+app_user='www-data'
+php_version='8.3'
+panel_domain=''
+file_transfer_max_mb='2048'
+
+usage() {
+  cat <<'EOF'
+Usage: sudo ./ops-agent/install-minipanel [options]
+
+  --apply                    Make changes (otherwise only prints the plan)
+  --app-path /var/www/panel  Laravel MiniPanel directory
+  --app-user www-data        User that runs PHP-FPM and the worker
+  --php-version 8.3          PHP version to install for the panel
+  --panel-domain panel.tld   Create an HTTP Nginx vhost for MiniPanel
+  --file-transfer-max-mb N   Maximum File Manager transfer size (default: 2048)
+  --with-firewall            Configure UFW for OpenSSH and Nginx Full
+EOF
+}
+
+while (($#)); do
+  case "$1" in
+    --apply) apply=1 ;;
+    --with-firewall) with_firewall=1 ;;
+    --app-path|--app-user|--php-version|--panel-domain|--file-transfer-max-mb)
+      (($# >= 2)) || { usage >&2; exit 64; }
+      case "$1" in
+        --app-path) app_path="$2" ;;
+        --app-user) app_user="$2" ;;
+        --php-version) php_version="$2" ;;
+        --panel-domain) panel_domain="$2" ;;
+        --file-transfer-max-mb) file_transfer_max_mb="$2" ;;
+      esac
+      shift ;;
+    --help|-h) usage; exit 0 ;;
+    *) usage >&2; exit 64 ;;
+  esac
+  shift
+done
+
+[[ $EUID -eq 0 ]] || { echo 'Run with sudo/root.' >&2; exit 77; }
+[[ "$app_path" =~ ^/var/www/[A-Za-z0-9._-]+$ ]] || { echo 'app-path must be a direct child of /var/www.' >&2; exit 64; }
+[[ "$app_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo 'Invalid app user.' >&2; exit 64; }
+[[ "$php_version" =~ ^8\.[234]$ ]] || { echo 'Supported PHP versions are 8.2, 8.3 and 8.4.' >&2; exit 64; }
+[[ "$file_transfer_max_mb" =~ ^[0-9]+$ && "$file_transfer_max_mb" -ge 128 && "$file_transfer_max_mb" -le 10240 ]] || { echo 'file-transfer-max-mb must be between 128 and 10240.' >&2; exit 64; }
+[[ -z "$panel_domain" || "$panel_domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] || { echo 'Invalid panel domain.' >&2; exit 64; }
+[[ -f /etc/os-release ]] && . /etc/os-release
+[[ "${ID:-}" == 'ubuntu' ]] || { echo 'This installer supports Ubuntu only.' >&2; exit 69; }
+
+run() { printf '+ '; printf '%q ' "$@"; printf '\n'; ((apply)) && "$@"; }
+copy_file() {
+  local source="$1" destination="$2" mode="$3"
+  printf '+ install %s %s\n' "$source" "$destination"
+  ((apply)) && install -o root -g root -m "$mode" "$source" "$destination"
+}
+write_root_value() {
+  local destination="$1" value="$2"
+  printf '+ write %s\n' "$destination"
+  if ((apply)); then
+    printf '%s\n' "$value" > "$destination"
+    chown root:root "$destination"
+    chmod 0600 "$destination"
+  fi
+}
+
+source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[[ -f "$app_path/artisan" ]] || { echo "Laravel MiniPanel was not found at $app_path." >&2; exit 66; }
+[[ -f "$app_path/composer.json" && -f "$app_path/package-lock.json" ]] || { echo "composer.json and package-lock.json are required." >&2; exit 66; }
+[[ -f "$app_path/.env" ]] || { echo "Create $app_path/.env from .env.production.example before installing." >&2; exit 66; }
+grep -qE '^APP_ENV=production$' "$app_path/.env" || { echo 'APP_ENV must be production.' >&2; exit 66; }
+grep -qE '^APP_KEY=base64:[A-Za-z0-9+/]{43}=$' "$app_path/.env" || { echo 'Generate a valid APP_KEY before installing.' >&2; exit 66; }
+grep -qE '^PASSKEYS_USER_HANDLE_SECRET=.{32,}$' "$app_path/.env" || { echo 'Set a permanent PASSKEYS_USER_HANDLE_SECRET of at least 32 characters before installing.' >&2; exit 66; }
+grep -qE '^MINIPANEL_EXECUTION_ENABLED=false$' "$app_path/.env" || { echo 'Keep MINIPANEL_EXECUTION_ENABLED=false during installation.' >&2; exit 66; }
+
+packages=(nginx git unzip curl ca-certificates composer certbot python3-certbot-nginx mariadb-client redis-server supervisor fail2ban ufw dnsutils nodejs npm "php${php_version}-cli" "php${php_version}-fpm" "php${php_version}-bcmath" "php${php_version}-curl" "php${php_version}-mbstring" "php${php_version}-mysql" "php${php_version}-xml" "php${php_version}-zip" "php${php_version}-gd" "php${php_version}-intl" "php${php_version}-redis")
+echo "MiniPanel installer: $([[ $apply -eq 1 ]] && echo APPLY || echo DRY RUN)"
+echo "Panel: $app_path | User: $app_user | PHP: $php_version"
+run apt-get update
+run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+id "$app_user" >/dev/null 2>&1 || { echo "User $app_user does not exist after package installation." >&2; exit 67; }
+app_group="$(id -gn "$app_user")"
+run install -d -m 0700 -o root -g root /etc/minipanel /etc/minipanel/deploy-keys /etc/minipanel/aliases
+run install -d -m 0750 -o root -g "$app_group" /var/lib/minipanel /var/lib/minipanel/downloads
+write_root_value /etc/minipanel/panel-storage-path "$app_path/storage/app/private"
+write_root_value /etc/minipanel/panel-user "$app_user"
+write_root_value /etc/minipanel/file-transfer-max-bytes "$((file_transfer_max_mb * 1024 * 1024))"
+write_root_value /etc/minipanel/download-root /var/lib/minipanel/downloads
+run install -d -m 0750 -o "$app_user" -g www-data "$app_path/storage" "$app_path/bootstrap/cache"
+run env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --working-dir="$app_path"
+run npm --prefix "$app_path" ci --no-audit --no-fund
+run npm --prefix "$app_path" run build
+run chown -R root:root "$app_path/vendor" "$app_path/node_modules" "$app_path/public/build"
+copy_file "$source_root/ops-agent/minipanel-agent" /usr/local/bin/minipanel-agent 0750
+copy_file "$source_root/ops-agent/sudoers-minipanel" /etc/sudoers.d/minipanel 0440
+
+worker_template="$(mktemp)"
+sed -e "s|^User=.*|User=$app_user|" -e "s|^WorkingDirectory=.*|WorkingDirectory=$app_path|" "$source_root/ops-agent/minipanel-worker.service" > "$worker_template"
+copy_file "$worker_template" /etc/systemd/system/minipanel-worker.service 0644
+rm -f "$worker_template"
+
+if [[ -n "$panel_domain" ]]; then
+  nginx_template="$(mktemp)"
+  cat > "$nginx_template" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $panel_domain;
+    root $app_path/public;
+    index index.php;
+    client_max_body_size ${file_transfer_max_mb}m;
+    location / { try_files \$uri \$uri/ /index.php?\$query_string; }
+    location ~ \.php\$ { include snippets/fastcgi-php.conf; fastcgi_pass unix:/run/php/php$php_version-fpm.sock; }
+    location ~ /\. { deny all; }
+}
+EOF
+  copy_file "$nginx_template" "/etc/nginx/sites-available/$panel_domain" 0644
+  rm -f "$nginx_template"
+  run ln -sfn "/etc/nginx/sites-available/$panel_domain" "/etc/nginx/sites-enabled/$panel_domain"
+fi
+
+php_upload_ini="/etc/php/$php_version/fpm/conf.d/99-minipanel-uploads.ini"
+printf '+ write %s\n' "$php_upload_ini"
+if ((apply)); then
+  install -d -m 0755 -o root -g root "$(dirname "$php_upload_ini")"
+  cat > "$php_upload_ini" <<EOF
+upload_max_filesize = ${file_transfer_max_mb}M
+post_max_size = ${file_transfer_max_mb}M
+max_execution_time = 7200
+max_input_time = 7200
+EOF
+  chown root:root "$php_upload_ini"
+  chmod 0644 "$php_upload_ini"
+fi
+
+if ((with_firewall)); then
+  run ufw allow OpenSSH
+  run ufw allow 'Nginx Full'
+  run ufw --force enable
+fi
+
+run systemctl daemon-reload
+run systemctl enable nginx redis-server fail2ban minipanel-worker
+run systemctl restart "php${php_version}-fpm" nginx redis-server fail2ban minipanel-worker
+run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" migrate --force --no-interaction
+run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" storage:link
+run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" optimize
+run nginx -t
+
+echo
+echo 'Bootstrap complete. Next: set MINIPANEL_EXECUTION_ENABLED=true only after reviewing the agent, then run php artisan minipanel:doctor.'
+[[ -n "$panel_domain" ]] && echo "When DNS points to this VPS, issue SSL with: certbot --nginx -d $panel_domain"

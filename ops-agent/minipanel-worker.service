@@ -1,0 +1,20 @@
+[Unit]
+Description=MiniPanel operation worker
+After=network.target
+
+[Service]
+Type=simple
+# Replace both values for the account and deployed MiniPanel directory.
+User=www-data
+WorkingDirectory=/var/www/minipanel
+ExecStart=/usr/bin/php artisan queue:work --tries=1 --timeout=7200 --sleep=2 --max-time=14400
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=7300
+PrivateTmp=true
+ProtectHome=true
+# Do not enable NoNewPrivileges or ProtectSystem here: this worker invokes the
+# separately validated, root-owned minipanel-agent through a narrowly scoped sudoers rule.
+
+[Install]
+WantedBy=multi-user.target
