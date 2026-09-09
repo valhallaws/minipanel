@@ -183,7 +183,8 @@ install_ip_certificate() {
   systemctl enable --now snapd.socket
   snap install --classic certbot >/dev/null 2>&1 || snap refresh certbot >/dev/null
   ln -sfn /snap/bin/certbot /usr/local/bin/certbot
-  certbot certonly --webroot --webroot-path /var/lib/minipanel/acme --non-interactive --agree-tos --email "$certificate_email" --preferred-profile shortlived --ip-address "$panel_ip" --cert-name "$certificate_name" --keep-until-expiring
+  install -d -m 0700 -o root -g root /var/lib/minipanel/certbot-home
+  HOME=/var/lib/minipanel/certbot-home XDG_CACHE_HOME=/var/lib/minipanel/certbot-home/.cache certbot certonly --webroot --webroot-path /var/lib/minipanel/acme --non-interactive --agree-tos --email "$certificate_email" --preferred-profile shortlived --ip-address "$panel_ip" --cert-name "$certificate_name" --keep-until-expiring
 }
 
 write_panel_https_vhost() {
@@ -234,6 +235,8 @@ write_ip_certificate_renewal_timer() {
 set -euo pipefail
 
 certificate='/etc/letsencrypt/live/$certificate_name/cert.pem'
+export HOME=/var/lib/minipanel/certbot-home
+export XDG_CACHE_HOME=/var/lib/minipanel/certbot-home/.cache
 # IP certificates are short-lived. Check locally twice a day and contact the
 # ACME server only when three days or less remain, or the certificate is absent.
 if [[ ! -s "\$certificate" ]] || ! /usr/bin/openssl x509 -checkend 259200 -noout -in "\$certificate" >/dev/null 2>&1; then
@@ -336,6 +339,7 @@ run env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --prefer-dist --opt
 run npm --prefix "$app_path" ci --no-audit --no-fund
 run npm --prefix "$app_path" run build
 run chown -R root:root "$app_path/vendor" "$app_path/node_modules" "$app_path/public/build"
+run chmod -R a+rX "$app_path/vendor" "$app_path/node_modules" "$app_path/public/build"
 copy_file "$source_root/ops-agent/minipanel-agent" /usr/local/bin/minipanel-agent 0750
 copy_file "$source_root/ops-agent/minipanel-root-terminal.service" /etc/systemd/system/minipanel-root-terminal.service 0644
 copy_file "$source_root/ops-agent/minipanel-root-terminal.nginx.conf" /etc/nginx/snippets/minipanel-root-terminal.conf 0644

@@ -67,9 +67,12 @@ save_node_version() {
 }
 
 ensure_site_certificate_renewal_timer() {
+  install -d -m 0700 -o root -g root /var/lib/minipanel/certbot-home
   cat > /usr/local/sbin/minipanel-site-certificates-renew <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+export HOME=/var/lib/minipanel/certbot-home
+export XDG_CACHE_HOME=/var/lib/minipanel/certbot-home/.cache
 exec /usr/local/bin/certbot renew --quiet --deploy-hook '/usr/bin/systemctl reload nginx'
 EOF
   chmod 0750 /usr/local/sbin/minipanel-site-certificates-renew
@@ -295,14 +298,19 @@ panel_user="$(cat /etc/minipanel/panel-user)"
 php_version="$(tr -d '[:space:]' < /etc/minipanel/panel-php-version 2>/dev/null || printf '8.3')"
 [[ "$app_path" == /var/www/* && -d "$app_path/.git" ]] || { echo 'Panel Git checkout is unavailable' >&2; exit 64; }
 [[ "$panel_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$php_version" =~ ^8\.[0-9]{1,2}$ ]] || { echo 'Panel runtime configuration is invalid' >&2; exit 64; }
-branch="$(git -C "$app_path" symbolic-ref --short HEAD)"
+git_user="$(stat -c '%U' "$app_path/.git")"
+[[ "$git_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo 'Panel Git identity is invalid' >&2; exit 64; }
+git config --global --add safe.directory "$app_path"
+runuser -u "$git_user" -- git config --global --add safe.directory "$app_path"
+branch="$(runuser -u "$git_user" -- git -C "$app_path" symbolic-ref --short HEAD)"
 [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo 'Panel branch is invalid' >&2; exit 64; }
-git -C "$app_path" fetch --prune origin "$branch"
+runuser -u "$git_user" -- git -C "$app_path" fetch --prune origin "$branch"
 git -C "$app_path" reset --hard "origin/$branch"
 COMPOSER_ALLOW_SUPERUSER=1 /usr/bin/php"$php_version" /usr/bin/composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --working-dir="$app_path"
 npm --prefix "$app_path" ci --no-audit --no-fund
 npm --prefix "$app_path" run build
 chown -R root:root "$app_path/vendor" "$app_path/node_modules" "$app_path/public/build"
+chmod -R a+rX "$app_path/vendor" "$app_path/node_modules" "$app_path/public/build"
 runuser -u "$panel_user" -- /usr/bin/php"$php_version" "$app_path/artisan" migrate --force --no-interaction
 runuser -u "$panel_user" -- /usr/bin/php"$php_version" "$app_path/artisan" optimize
 systemctl restart "php$php_version-fpm" minipanel-worker
@@ -975,7 +983,7 @@ EOF
     certificate_email="${extra_arguments[1]:-}"
     [[ "$certificate_email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || fail 'A valid certificate contact email is required'
     ensure_site_certificate_renewal_timer
-    certbot --nginx --non-interactive --agree-tos --email "$certificate_email" --redirect -d "$public_domain"
+    HOME=/var/lib/minipanel/certbot-home XDG_CACHE_HOME=/var/lib/minipanel/certbot-home/.cache certbot --nginx --non-interactive --agree-tos --email "$certificate_email" --redirect -d "$public_domain"
     echo 'MINIPANEL_RENEWAL_ENABLED'
     echo "SSL certificate issued for $domain"
     ;;
