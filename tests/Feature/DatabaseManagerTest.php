@@ -191,7 +191,9 @@ class DatabaseManagerTest extends TestCase
         $database = SiteDatabase::query()->sole();
         $this->assertSame('Orion_prod', $database->name);
         $this->assertSame('active', $database->status);
-        Process::assertRan(fn ($process) => $process->command[2] === 'database-sync');
+        Process::assertRan(fn ($process) => $process->command[0] === '/usr/bin/sudo'
+            && $process->command[1] === '--non-interactive'
+            && $process->command[3] === 'database-sync');
     }
 
     public function test_local_execution_disabled_does_not_touch_mariadb(): void
@@ -371,7 +373,7 @@ class DatabaseManagerTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertSame('active', SiteDatabase::query()->sole()->status);
-        Process::assertRanTimes(fn ($process) => $process->command[2] === 'database-sync' && ! (json_decode($process->input, true)['statistics'] ?? false), 2);
+        Process::assertRanTimes(fn ($process) => $process->command[3] === 'database-sync' && ! (json_decode($process->input, true)['statistics'] ?? false), 2);
     }
 
     private function site(string $domain = 'example.com'): Site

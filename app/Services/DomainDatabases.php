@@ -36,12 +36,15 @@ class DomainDatabases
             ])->all(),
         ];
         $command = [
-            'sudo', '/usr/local/bin/minipanel-agent', 'database-sync',
+            '/usr/bin/sudo', '--non-interactive', '/usr/local/bin/minipanel-agent', 'database-sync',
             $site->path, $site->resourceDomain(), '', 'main', $site->php_version, '0', '0', 'static', '',
         ];
         $result = null;
         for ($attempt = 1; $attempt <= 2; $attempt++) {
-            $result = Process::timeout(30)->input(json_encode($payload, JSON_THROW_ON_ERROR))->run($command);
+            $result = Process::env([
+                'HOME' => '/var/www/freyja',
+                'PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+            ])->timeout(30)->input(json_encode($payload, JSON_THROW_ON_ERROR))->run($command);
             if ($result->successful()) {
                 break;
             }
@@ -65,6 +68,7 @@ class DomainDatabases
             Log::warning('MariaDB synchronization failed.', [
                 'site_id' => $site->id,
                 'domain' => $site->domain,
+                'exit_code' => $result->exitCode(),
                 'reason' => $matches[1] ?? 'unknown',
             ]);
 
