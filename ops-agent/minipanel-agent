@@ -902,7 +902,7 @@ EOF
     ;;
   database-sync)
     [[ -f /usr/local/lib/minipanel-database.php && ! -L /usr/local/lib/minipanel-database.php ]] || fail 'Database helper is unavailable'
-    /usr/bin/php /usr/local/lib/minipanel-database.php "$domain"
+    systemd-run --quiet --wait --pipe --collect --property=Type=exec --property=User=root /usr/bin/php /usr/local/lib/minipanel-database.php "$domain"
     ;;
   provision)
     provision_site
