@@ -66,9 +66,9 @@
             <div><dt class="muted">Fecha del commit</dt><dd class="mt-1">{{ $panelUpdateStatus['Fecha'] ?? '—' }}</dd></div>
         </dl>
         @error('panelUpdate')<p class="error mt-4">{{ $message }}</p>@enderror
-        <div class="mt-5 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-            <div class="flex flex-wrap items-center justify-between gap-2"><div><h3>Webhook de actualización</h3><p class="muted">GitHub debe enviar <code>push</code> a esta ruta para la rama <code>{{ $panelUpdateBranch }}</code>.</p></div><span class="security-state">{{ $panelUpdateWebhookConfigured ? 'Secreto listo' : 'Falta secreto' }}</span></div>
-            <code class="mt-3 block break-all text-sm text-sky-300">{{ $panelUpdateWebhookUrl }}</code>
+        <div class="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700">
+            <div class="flex flex-wrap items-center justify-between gap-3"><div><strong>Webhook de actualización</strong><p class="muted">GitHub debe enviar <code>push</code> a esta ruta para la rama <code>{{ $panelUpdateBranch }}</code>.</p></div><span class="security-state">{{ $panelUpdateWebhookConfigured ? 'Secreto listo' : 'Falta secreto' }}</span></div>
+            <code class="mt-3 block break-all text-sm text-sky-700 dark:text-sky-300">{{ $panelUpdateWebhookUrl }}</code>
             @if(! $panelUpdateWebhookConfigured)<p class="error mt-3">Define <code>PANEL_UPDATE_WEBHOOK_SECRET</code> en el <code>.env</code> antes de registrarlo en GitHub.</p>@endif
         </div>
     </section>
