@@ -3,6 +3,6 @@
     <span class="domain-status-options" x-show="statusMenu" x-cloak @click.outside="statusMenu = false">
         @if($site->status === 'active')<button type="button" wire:click="changeSiteStatus({{ $site->id }}, 'suspended')" @click="statusMenu = false" wire:loading.attr="disabled">Suspender</button>
         @elseif($site->status === 'suspended')<button type="button" wire:click="changeSiteStatus({{ $site->id }}, 'active')" @click="statusMenu = false" wire:loading.attr="disabled">Activar</button>
-        @else<span>Preparación pendiente</span>@endif
+        @else<button type="button" wire:click="provision({{ $site->id }})" @click="statusMenu = false" wire:loading.attr="disabled">Reintentar preparación</button>@endif
     </span>
 </span>

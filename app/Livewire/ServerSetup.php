@@ -136,7 +136,7 @@ class ServerSetup extends Component
     public function prepareServerAction(string $action, string $service = ''): void
     {
         abort_unless(Auth::check(), 403);
-        abort_unless(in_array($action, ['hostname', 'timezone', 'sync-clock', 'restart-service', 'firewall-reload', 'fail2ban-reload', 'system-update', 'reboot'], true), 422);
+        abort_unless(in_array($action, ['hostname', 'timezone', 'sync-clock', 'restart-service', 'firewall-reload', 'fail2ban-reload', 'system-update', 'panel-update', 'reboot'], true), 422);
         abort_unless($action !== 'restart-service' || in_array($service, $this->managedServices(), true), 422);
         $this->serverAction = $action;
         $this->serverService = $service;
@@ -232,6 +232,7 @@ class ServerSetup extends Component
             'firewall-reload' => ['server-firewall-reload'],
             'fail2ban-reload' => ['server-fail2ban-reload'],
             'system-update' => ['server-system-update-start'],
+            'panel-update' => ['server-panel-update-start'],
             'firewall-allow' => ['server-firewall-allow', $this->firewallPort, $this->firewallProtocol, $this->firewallSource ?: 'any'],
             'firewall-delete' => ['server-firewall-delete', $this->firewallRuleNumber],
             'fail2ban-unban' => ['server-fail2ban-unban', $this->fail2banJail, $this->fail2banIp],

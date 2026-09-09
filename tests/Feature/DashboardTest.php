@@ -64,6 +64,23 @@ class DashboardTest extends TestCase
         Queue::assertPushed(RunDeployment::class, fn (RunDeployment $job): bool => $job->deploymentId === $deployment->id);
     }
 
+    public function test_provisioning_site_shows_a_retry_action(): void
+    {
+        $site = Site::create([
+            'name' => 'Temporary site',
+            'domain' => '159-54-145-184.sslip.io',
+            'path' => '/var/www/159-54-145-184.sslip.io',
+            'branch' => 'main',
+            'php_version' => '8.3',
+            'runtime' => 'static',
+        ]);
+
+        Livewire::actingAs(User::factory()->create())
+            ->test(Dashboard::class)
+            ->assertSee('Reintentar preparación')
+            ->assertSee("provision({$site->id})", false);
+    }
+
     public function test_dashboard_polls_while_a_deployment_is_pending(): void
     {
         $site = Site::create([

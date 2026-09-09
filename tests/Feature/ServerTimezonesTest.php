@@ -123,6 +123,19 @@ class ServerTimezonesTest extends TestCase
         Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-system-update-start']);
     }
 
+    public function test_panel_update_starts_only_the_fixed_agent_action(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result('Actualización de Freyja iniciada en segundo plano.'));
+
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->call('prepareServerAction', 'panel-update')
+            ->call('runServerAction')
+            ->assertHasNoErrors();
+
+        Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-update-start']);
+    }
+
     public function test_firewall_rule_requires_confirmation_and_uses_the_fixed_agent_action(): void
     {
         config()->set('minipanel.execution_enabled', true);

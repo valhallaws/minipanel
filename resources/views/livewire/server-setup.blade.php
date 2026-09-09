@@ -58,7 +58,8 @@
     </section>
     @endif
     @if($serverSection === 'maintenance')
-    <section class="panel danger-zone" id="maintenance"><div class="section-title"><div><h2>Reiniciar VPS</h2><p class="muted">Corta brevemente todos los sitios, conexiones y colas. Freyja volverá al terminar el arranque.</p></div><button class="danger-button" wire:click="prepareServerAction('reboot')">Reiniciar VPS</button></div></section>
+    <section class="panel" id="maintenance"><div class="section-title"><div><h2>Actualizar Freyja</h2><p class="muted">Descarga la rama actual del panel, reinstala dependencias, ejecuta migraciones y recompila la interfaz. Los sitios hospedados no se modifican.</p></div><button class="secondary" wire:click="prepareServerAction('panel-update')">Actualizar desde Git</button></div></section>
+    <section class="panel danger-zone"><div class="section-title"><div><h2>Reiniciar VPS</h2><p class="muted">Corta brevemente todos los sitios, conexiones y colas. Freyja volverá al terminar el arranque.</p></div><button class="danger-button" wire:click="prepareServerAction('reboot')">Reiniciar VPS</button></div></section>
     @endif
     @if($serverOutput)<section class="panel"><h2>Resultado</h2><pre class="laravel-console">{{ $serverOutput }}</pre></section>@endif
     @if($confirmServerAction)
@@ -86,13 +87,15 @@
                     Recargar Fail2ban
                 @elseif($serverAction === 'system-update')
                     Instalar actualizaciones del sistema
+                @elseif($serverAction === 'panel-update')
+                    Actualizar Freyja desde Git
                 @elseif($serverAction === 'timezone')
                     Cambiar zona horaria
                 @else
                     Sincronizar reloj
                 @endif
             </h2>
-            <p>@if($serverAction === 'reboot') Escribe <code>REINICIAR</code> para reiniciar el VPS ahora. @elseif($serverAction === 'hostname') Escribe el hostname nuevo para confirmar el cambio del sistema. @elseif($serverAction === 'system-update') Escribe <code>ACTUALIZAR</code> para iniciar <code>apt update</code> y <code>apt upgrade</code> en segundo plano. @elseif($serverAction === 'firewall-allow') Escribe <code>APLICAR</code> para permitir {{ $firewallPort }}/{{ $firewallProtocol }} desde {{ $firewallSource ?: 'cualquier origen' }}. @elseif($serverAction === 'firewall-delete') Escribe <code>ELIMINAR</code> para quitar la regla UFW #{{ $firewallRuleNumber }}. @elseif($serverAction === 'fail2ban-unban') Escribe <code>DESBLOQUEAR</code> para retirar {{ $fail2banIp }} del jail {{ $fail2banJail }}. @elseif($serverAction === 'ssh-key-add') Escribe <code>AGREGAR</code> para autorizar esta llave pública. @elseif($serverAction === 'ssh-key-delete') Escribe <code>ELIMINAR</code> para borrar la llave #{{ $sshKeyNumber }}. @else Esta acción se ejecutará directamente en el VPS. @endif</p>
+            <p>@if($serverAction === 'reboot') Escribe <code>REINICIAR</code> para reiniciar el VPS ahora. @elseif($serverAction === 'hostname') Escribe el hostname nuevo para confirmar el cambio del sistema. @elseif($serverAction === 'system-update') Escribe <code>ACTUALIZAR</code> para iniciar <code>apt update</code> y <code>apt upgrade</code> en segundo plano. @elseif($serverAction === 'panel-update') Descargará la rama actual de Freyja y el panel se recargará al terminar. @elseif($serverAction === 'firewall-allow') Escribe <code>APLICAR</code> para permitir {{ $firewallPort }}/{{ $firewallProtocol }} desde {{ $firewallSource ?: 'cualquier origen' }}. @elseif($serverAction === 'firewall-delete') Escribe <code>ELIMINAR</code> para quitar la regla UFW #{{ $firewallRuleNumber }}. @elseif($serverAction === 'fail2ban-unban') Escribe <code>DESBLOQUEAR</code> para retirar {{ $fail2banIp }} del jail {{ $fail2banJail }}. @elseif($serverAction === 'ssh-key-add') Escribe <code>AGREGAR</code> para autorizar esta llave pública. @elseif($serverAction === 'ssh-key-delete') Escribe <code>ELIMINAR</code> para borrar la llave #{{ $sshKeyNumber }}. @else Esta acción se ejecutará directamente en el VPS. @endif</p>
             @if($serverAction === 'reboot')<label>Confirmación<input wire:model="rebootConfirmation" autocomplete="off"></label>@endif
             @if($serverAction === 'hostname')<label>Confirmación<input wire:model="hostnameConfirmation" placeholder="{{ $serverHostname }}" autocomplete="off" autocapitalize="none" spellcheck="false"></label>@error('hostnameConfirmation')<p class="error">{{ $message }}</p>@enderror@endif
             @if($serverAction === 'system-update')<label>Confirmación<input wire:model="updateConfirmation" autocomplete="off"></label>@error('updateConfirmation')<p class="error">{{ $message }}</p>@enderror@endif

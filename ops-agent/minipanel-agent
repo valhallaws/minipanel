@@ -281,6 +281,40 @@ if [[ "$action" == 'server-system-update-start' ]]; then
   echo 'Actualización iniciada en segundo plano. Revisa el estado en unos minutos.'
   exit 0
 fi
+if [[ "$action" == 'server-panel-update-start' ]]; then
+  (( $# == 1 )) || fail 'This action does not accept arguments'
+  systemctl is-active --quiet minipanel-panel-update && fail 'A Freyja update is already running'
+  install -d -o root -g root -m 0750 /var/log/minipanel
+  cat > /usr/local/sbin/minipanel-panel-update <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+storage_path="$(cat /etc/minipanel/panel-storage-path)"
+app_path="${storage_path%/storage/app/private}"
+panel_user="$(cat /etc/minipanel/panel-user)"
+php_version="$(tr -d '[:space:]' < /etc/minipanel/panel-php-version 2>/dev/null || printf '8.3')"
+[[ "$app_path" == /var/www/* && -d "$app_path/.git" ]] || { echo 'Panel Git checkout is unavailable' >&2; exit 64; }
+[[ "$panel_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$php_version" =~ ^8\.[0-9]{1,2}$ ]] || { echo 'Panel runtime configuration is invalid' >&2; exit 64; }
+branch="$(git -C "$app_path" symbolic-ref --short HEAD)"
+[[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo 'Panel branch is invalid' >&2; exit 64; }
+git -C "$app_path" fetch --prune origin "$branch"
+git -C "$app_path" reset --hard "origin/$branch"
+COMPOSER_ALLOW_SUPERUSER=1 /usr/bin/php"$php_version" /usr/bin/composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --working-dir="$app_path"
+npm --prefix "$app_path" ci --no-audit --no-fund
+npm --prefix "$app_path" run build
+chown -R root:root "$app_path/vendor" "$app_path/node_modules" "$app_path/public/build"
+runuser -u "$panel_user" -- /usr/bin/php"$php_version" "$app_path/artisan" migrate --force --no-interaction
+runuser -u "$panel_user" -- /usr/bin/php"$php_version" "$app_path/artisan" optimize
+systemctl restart "php$php_version-fpm" minipanel-worker
+echo "Freyja updated from origin/$branch: $(git -C "$app_path" rev-parse --short HEAD)"
+EOF
+  chown root:root /usr/local/sbin/minipanel-panel-update
+  chmod 0750 /usr/local/sbin/minipanel-panel-update
+  : > /var/log/minipanel/panel-update.log
+  systemd-run --unit=minipanel-panel-update --collect --property=Type=exec --property=StandardOutput=append:/var/log/minipanel/panel-update.log --property=StandardError=append:/var/log/minipanel/panel-update.log /usr/local/sbin/minipanel-panel-update
+  echo 'Actualización de Freyja iniciada en segundo plano. El panel se recargará al terminar.'
+  exit 0
+fi
 if [[ "$action" == 'server-hostname' ]]; then
   (( $# == 2 )) || fail 'Hostname is required'
   hostname="$2"
