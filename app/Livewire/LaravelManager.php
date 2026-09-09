@@ -93,9 +93,11 @@ class LaravelManager extends Component
     {
         abort_unless($this->showEnvironment && $this->environmentHash !== '' && $this->environmentRepositoryId === $this->repositoryId, 422);
         $this->validate(['environment' => ['nullable', 'string', 'max:1048576']]);
-        app(DomainLaravel::class)->quick($this->site, $this->repositoryId, 'laravel-env-write', ['contents' => $this->environment, 'hash' => $this->environmentHash]);
+        $result = app(DomainLaravel::class)->quick($this->site, $this->repositoryId, 'laravel-env-write', ['contents' => $this->environment, 'hash' => $this->environmentHash]);
         $this->closeEnvironment();
-        session()->flash('notice', '.env guardado con permisos privados. Si usas caché de configuración, ejecuta config:clear desde Artisan para aplicar los cambios.');
+        session()->flash('notice', ($result['caches_rebuilt'] ?? false)
+            ? '.env guardado con permisos privados. Las cachés de Laravel se regeneraron.'
+            : '.env guardado con permisos privados. La caché se regenerará cuando el proyecto tenga sus dependencias instaladas.');
     }
 
     public function setMaintenance(bool $enabled): void

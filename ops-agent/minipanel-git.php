@@ -279,7 +279,17 @@ final class MiniPanelGit
                 }
             }
 
-            return ['saved' => true, 'hash' => hash('sha256', $new)];
+            $cachesRebuilt = is_file($target.'/vendor/autoload.php');
+            if ($cachesRebuilt) {
+                try {
+                    $this->run(['/usr/bin/php'.$this->phpVersion, 'artisan', 'optimize:clear', '--no-interaction', '--no-ansi'], $target, false, null, 'No se pudieron limpiar las cachés de Laravel.');
+                    $this->run(['/usr/bin/php'.$this->phpVersion, 'artisan', 'optimize', '--no-interaction', '--no-ansi'], $target, false, null, 'No se pudieron regenerar las cachés de Laravel.');
+                } catch (Throwable $exception) {
+                    throw new RuntimeException('El .env se guardó, pero no se pudieron regenerar las cachés de Laravel.', previous: $exception);
+                }
+            }
+
+            return ['saved' => true, 'hash' => hash('sha256', $new), 'caches_rebuilt' => $cachesRebuilt];
         }
         if ($action === 'laravel-maintenance') {
             $secret = $data['secret'] ?? '';

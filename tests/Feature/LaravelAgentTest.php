@@ -25,6 +25,7 @@ class LaravelAgentTest extends TestCase
         $env = $agent->execute('laravel-env-read', ['directory' => 'httpdocs']);
         $result = $agent->execute('laravel-env-write', ['directory' => 'httpdocs', 'hash' => $env['hash'], 'contents' => "APP_KEY=keep-me\nDB_DATABASE=erp\n"]);
         $this->assertTrue($result['saved']);
+        $this->assertFalse($result['caches_rebuilt']);
         $this->assertSame("APP_KEY=keep-me\nDB_DATABASE=erp\n", Storage::disk('local')->get('site/httpdocs/.env'));
         $this->assertSame(0600, fileperms(Storage::disk('local')->path('site/httpdocs/.env')) & 0777);
     }

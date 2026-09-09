@@ -83,7 +83,7 @@ class LaravelManagerTest extends TestCase
         config()->set('minipanel.execution_enabled', true);
         Queue::fake();
         $repository = $this->repository();
-        Process::fake(fn ($process) => Process::result(in_array('laravel-env-read', $process->command, true) ? json_encode(['contents' => 'APP_KEY=unchanged', 'hash' => hash('sha256', 'APP_KEY=unchanged')]) : '{"saved":true}'));
+        Process::fake(fn ($process) => Process::result(in_array('laravel-env-read', $process->command, true) ? json_encode(['contents' => 'APP_KEY=unchanged', 'hash' => hash('sha256', 'APP_KEY=unchanged')]) : '{"saved":true,"caches_rebuilt":true}'));
         Livewire::actingAs(User::factory()->create())->test(LaravelManager::class, ['site' => $repository->site])->call('openEnvironment')->assertSet('environment', 'APP_KEY=unchanged')->set('environment', "APP_KEY=unchanged\nDB_PASSWORD=private")->call('saveEnvironment')->assertHasNoErrors()->assertSet('showEnvironment', false)->assertSet('environment', '');
         Process::assertRan(fn ($process) => in_array('laravel-env-write', $process->command, true) && json_decode($process->input, true)['directory'] === 'apps/erp');
         Queue::assertNothingPushed();
