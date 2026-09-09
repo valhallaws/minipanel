@@ -108,8 +108,9 @@ final class MiniPanelGit
             $this->step('Validando clave y conexión');
             $this->git(['ls-remote', '--symref', $url, 'HEAD'], $this->root);
             $this->done();
+            $initialClone = ($data['initial'] ?? false) === true;
             $maintenanceStarted = false;
-            if (is_dir($target.'/.git') && $this->isLaravelProject($target) && ! is_file($target.'/storage/framework/down')) {
+            if (! $initialClone && is_dir($target.'/.git') && is_file($target.'/vendor/autoload.php') && $this->isLaravelProject($target) && ! is_file($target.'/storage/framework/down')) {
                 $this->step('Activando mantenimiento Laravel');
                 $this->run(['/usr/bin/php'.$this->phpVersion, 'artisan', 'down', '--no-interaction'], $target);
                 $this->done();
@@ -152,7 +153,7 @@ final class MiniPanelGit
             $frontend = isset($dependencies['vite']) || isset($dependencies['laravel-mix']);
             $projectType = $laravel ? 'Laravel' : ($frontend ? (isset($dependencies['vite']) ? 'Vite' : 'Mix') : 'Web');
             $this->done($projectType);
-            if (($data['prepare'] ?? false) === true) {
+            if (! $initialClone && ($data['prepare'] ?? false) === true) {
                 $this->step('Preparando el proyecto');
                 if ($laravel) {
                     if (is_link($target.'/.env') || is_link($target.'/.env.example')) {
@@ -189,7 +190,9 @@ final class MiniPanelGit
                 }
                 $this->done();
             }
-            $this->runDeployCommands($data['commands'] ?? '', $target);
+            if (! $initialClone) {
+                $this->runDeployCommands($data['commands'] ?? '', $target);
+            }
             if ($maintenanceStarted) {
                 $this->step('Reanudando Laravel');
                 $this->run(['/usr/bin/php'.$this->phpVersion, 'artisan', 'up', '--no-interaction'], $target);

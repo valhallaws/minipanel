@@ -127,12 +127,60 @@ class GitManagerTest extends TestCase
         Process::assertRanTimes(fn ($process) => in_array('sync', $process->command, true), 1);
     }
 
+    public function test_initial_clone_only_clones_and_detects_the_project(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        $site = $this->site();
+        $site->update(['deploy_commands' => 'php artisan migrate --force']);
+        $repository = SiteRepository::factory()->for($site)->create(['directory' => 'httpdocs', 'status' => 'queued', 'operation_token' => 'token', 'prepare_project' => true]);
+        $input = null;
+        Process::fake(function ($process) use (&$input) {
+            $input = json_decode($process->input, true, flags: JSON_THROW_ON_ERROR);
+
+            return Process::describe()->output([
+                json_encode(['step' => 'Validando clave y conexión', 'status' => 'done']),
+                json_encode(['result' => ['branch' => 'main', 'branches' => ['main'], 'commits' => [], 'project_type' => 'Laravel']]),
+            ]);
+        });
+
+        (new RunRepositorySync($repository->id, 'token'))->handle(app(DomainGit::class));
+
+        $this->assertTrue($input['initial']);
+        $this->assertFalse($input['prepare']);
+        $this->assertSame('', $input['commands']);
+        $labels = collect($repository->fresh()->steps)->pluck('label');
+        $this->assertFalse($labels->contains('Preparando el proyecto'));
+        $this->assertFalse($labels->contains('Ejecutando script de deploy'));
+    }
+
+    public function test_worker_positions_conditional_maintenance_before_the_file_update_steps(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        $repository = SiteRepository::factory()->for($this->site())->create([
+            'status' => 'queued',
+            'operation_token' => 'token',
+            'project_type' => 'Laravel',
+            'synced_at' => now(),
+        ]);
+        Process::fake(fn () => Process::describe()->output([
+            json_encode(['step' => 'Validando clave y conexión', 'status' => 'done']),
+            json_encode(['step' => 'Activando mantenimiento Laravel', 'status' => 'done']),
+            json_encode(['result' => ['branch' => 'main', 'branches' => ['main'], 'commits' => [], 'project_type' => 'Laravel']]),
+        ]));
+
+        (new RunRepositorySync($repository->id, 'token'))->handle(app(DomainGit::class));
+
+        $labels = collect($repository->fresh()->steps)->pluck('label')->all();
+        $this->assertLessThan(array_search('Obteniendo archivos', $labels, true), array_search('Activando mantenimiento Laravel', $labels, true));
+        $this->assertLessThan(array_search('Activando mantenimiento Laravel', $labels, true), array_search('Validando clave y conexión', $labels, true));
+    }
+
     public function test_worker_lists_the_post_deploy_script_before_it_runs(): void
     {
         config()->set('minipanel.execution_enabled', true);
         $site = $this->site();
         $site->update(['deploy_commands' => "php artisan migrate --force\nnpm run build"]);
-        $repository = SiteRepository::factory()->for($site)->create(['directory' => 'httpdocs', 'status' => 'queued', 'operation_token' => 'token']);
+        $repository = SiteRepository::factory()->for($site)->create(['directory' => 'httpdocs', 'status' => 'queued', 'operation_token' => 'token', 'synced_at' => now()]);
         Process::fake(fn () => Process::describe()->output([
             json_encode(['step' => 'Validando clave y conexión', 'status' => 'running']),
             json_encode(['step' => 'Validando clave y conexión', 'status' => 'done']),

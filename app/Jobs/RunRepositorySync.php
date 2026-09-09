@@ -31,13 +31,17 @@ class RunRepositorySync implements ShouldQueue
         }
         try {
             $git->available($repository->site);
-            $steps = $this->plannedSteps($repository);
+            $initialClone = $repository->synced_at === null;
+            $steps = $this->plannedSteps($repository, $initialClone);
             $repository->update(['status' => 'running', 'steps' => array_values($steps)]);
             $buffer = '';
             $metadata = null;
             $result = Process::timeout(1740)->input(json_encode([
                 'id' => $repository->key_token, 'url' => $repository->url, 'directory' => $repository->directory,
-                'branch' => $this->branch, 'prepare' => $repository->prepare_project, 'commands' => $repository->site->deploy_commands ?? '',
+                'branch' => $this->branch,
+                'initial' => $initialClone,
+                'prepare' => ! $initialClone && $repository->prepare_project,
+                'commands' => $initialClone ? '' : $repository->site->deploy_commands ?? '',
             ], JSON_THROW_ON_ERROR))->start($git->command($repository->site, 'sync'), function (string $type, string $output) use (&$buffer, &$metadata, &$steps, $repository): void {
                 if ($type !== 'out') {
                     return;
@@ -52,7 +56,7 @@ class RunRepositorySync implements ShouldQueue
                     }
                     if (isset($event['step'], $event['status'])) {
                         $steps[$event['step']] = ['label' => $event['step'], 'status' => $event['status'], 'detail' => mb_substr($event['detail'] ?? '', 0, 3000)];
-                        $repository->update(['steps' => array_values($steps)]);
+                        $repository->update(['steps' => array_values($this->sortSteps($steps))]);
                     }
                     if (isset($event['result'])) {
                         $metadata = $event['result'];
@@ -82,7 +86,7 @@ class RunRepositorySync implements ShouldQueue
     /**
      * @return array<string, array{label: string, status: string, detail: string}>
      */
-    private function plannedSteps(SiteRepository $repository): array
+    private function plannedSteps(SiteRepository $repository, bool $initialClone): array
     {
         $labels = [
             'Validando clave y conexión',
@@ -91,11 +95,12 @@ class RunRepositorySync implements ShouldQueue
             'Detectando el proyecto',
         ];
 
-        if ($repository->prepare_project) {
+        if (! $initialClone && $repository->prepare_project) {
             $labels[] = 'Preparando el proyecto';
         }
 
-        foreach (preg_split('/\R/', (string) $repository->site?->deploy_commands) ?: [] as $command) {
+        $deployCommands = $initialClone ? [] : (preg_split('/\R/', (string) $repository->site?->deploy_commands) ?: []);
+        foreach ($deployCommands as $command) {
             $command = trim($command);
             if ($command !== '' && ! str_starts_with($command, '#')) {
                 $labels[] = 'Ejecutando script de deploy';
@@ -108,6 +113,33 @@ class RunRepositorySync implements ShouldQueue
             'status' => 'pending',
             'detail' => '',
         ]])->all();
+    }
+
+    /**
+     * @param  array<string, array{label: string, status: string, detail: string}>  $steps
+     * @return array<string, array{label: string, status: string, detail: string}>
+     */
+    private function sortSteps(array $steps): array
+    {
+        $order = array_flip([
+            'Validando clave y conexión',
+            'Activando mantenimiento Laravel',
+            'Obteniendo archivos',
+            'Actualizando archivos',
+            'Detectando el proyecto',
+            'Preparando el proyecto',
+            'Ejecutando script de deploy',
+            'Reanudando Laravel',
+        ]);
+
+        uksort($steps, static function (string $left, string $right) use ($order): int {
+            $leftOrder = $order[$left] ?? PHP_INT_MAX;
+            $rightOrder = $order[$right] ?? PHP_INT_MAX;
+
+            return $leftOrder === $rightOrder ? $left <=> $right : $leftOrder <=> $rightOrder;
+        });
+
+        return $steps;
     }
 
     public function failed(?Throwable $exception): void
