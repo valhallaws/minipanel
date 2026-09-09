@@ -30,6 +30,10 @@ class PanelUpdateWebhookController extends Controller
         abort_unless($request->header('X-GitHub-Event') === 'push', 422, 'Unsupported webhook event.');
 
         $data = json_decode($payload, true);
+        if (! is_array($data) && str_contains((string) $request->header('Content-Type'), 'application/x-www-form-urlencoded')) {
+            parse_str($payload, $formData);
+            $data = is_string($formData['payload'] ?? null) ? json_decode($formData['payload'], true) : null;
+        }
         abort_unless(is_array($data), 422, 'Invalid webhook payload.');
 
         $branch = (string) config('minipanel.panel_update_branch');

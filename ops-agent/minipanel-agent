@@ -103,6 +103,10 @@ EOF
   systemctl enable --now minipanel-site-certificates.timer
   systemctl is-active --quiet minipanel-site-certificates.timer || fail 'Site certificate renewal timer is not active'
 }
+
+run_certbot() {
+  systemd-run --quiet --wait --pipe --collect --property=Type=exec --property=User=root /usr/local/bin/certbot "$@"
+}
 [[ $EUID -eq 0 ]] || fail 'Run through the authorized control-plane identity'
 if [[ -n "${SUDO_USER:-}" ]]; then
   panel_identity="$(cat /etc/minipanel/panel-user)"
@@ -997,7 +1001,7 @@ EOF
     certificate_email="${extra_arguments[1]:-}"
     [[ "$certificate_email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || fail 'A valid certificate contact email is required'
     ensure_site_certificate_renewal_timer
-    HOME=/var/lib/minipanel/certbot-home XDG_CACHE_HOME=/var/lib/minipanel/certbot-home/.cache certbot --nginx --non-interactive --agree-tos --email "$certificate_email" --redirect -d "$public_domain"
+    run_certbot --nginx --non-interactive --agree-tos --email "$certificate_email" --redirect -d "$public_domain"
     echo 'MINIPANEL_RENEWAL_ENABLED'
     echo "SSL certificate issued for $domain"
     ;;

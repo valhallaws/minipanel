@@ -41,6 +41,23 @@ class PanelUpdateWebhookTest extends TestCase
         Process::assertNothingRan();
     }
 
+    public function test_queues_a_signed_form_encoded_github_push(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        config()->set('minipanel.panel_update_webhook_secret', 'panel-update-webhook-secret-for-tests');
+        Process::fake(fn () => Process::result('Update started.'));
+        $content = 'payload='.rawurlencode('{"ref":"refs/heads/main"}');
+
+        $response = $this->call('POST', route('webhooks.panel-update'), [], [], [], [
+            'CONTENT_TYPE' => 'application/x-www-form-urlencoded',
+            'HTTP_X_GITHUB_EVENT' => 'push',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $content, 'panel-update-webhook-secret-for-tests'),
+        ], $content);
+
+        $response->assertAccepted()->assertJson(['queued' => true]);
+        Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-update-start']);
+    }
+
     public function test_returns_503_when_execution_is_disabled(): void
     {
         config()->set('minipanel.execution_enabled', false);
