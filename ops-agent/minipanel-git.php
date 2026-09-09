@@ -98,9 +98,6 @@ final class MiniPanelGit
                 }
                 $other = json_decode(file_get_contents($otherFile), true, flags: JSON_THROW_ON_ERROR);
                 if (str_starts_with($target.'/', $other['path'].'/') || str_starts_with($other['path'].'/', $target.'/')) {
-                    if ($other['path'] !== $target || $other['url'] !== $url) {
-                        throw new RuntimeException('El destino se cruza con otro repositorio.');
-                    }
                     $staleRecords[] = $otherFile;
                 }
             }
