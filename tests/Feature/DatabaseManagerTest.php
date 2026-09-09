@@ -318,6 +318,18 @@ class DatabaseManagerTest extends TestCase
         $this->assertSame('pending', SiteDatabase::query()->sole()->status);
     }
 
+    public function test_failed_agent_shows_a_safe_database_failure_reason(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result(errorOutput: 'Database administration failed [existing-database].', exitCode: 1));
+
+        Livewire::actingAs(User::factory()->create())->test(DatabaseManager::class, ['site' => $this->site()])
+            ->set('databaseName', 'app')
+            ->call('createDatabase')
+            ->assertHasErrors('database')
+            ->assertSee('Ya existe una base de datos que no administra Freyja.');
+    }
+
     public function test_database_application_retries_once_after_an_initial_agent_failure(): void
     {
         config()->set('minipanel.execution_enabled', true);

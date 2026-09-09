@@ -48,7 +48,22 @@ class DomainDatabases
             }
         }
         if (! $result->successful()) {
-            throw ValidationException::withMessages(['database' => 'No se completó la aplicación en MariaDB. Los recursos siguen pendientes; revisa la configuración del servidor y reintenta.']);
+            $message = 'No se completó la aplicación en MariaDB. Los recursos siguen pendientes; revisa la configuración del servidor y reintenta.';
+            $reason = trim($result->errorOutput());
+            $descriptions = [
+                'busy' => 'MariaDB está ocupado por otra operación.',
+                'registry' => 'No se pudo leer o guardar el registro privado de ownership.',
+                'ownership-conflict' => 'La base o el usuario pertenecen a otro dominio del panel.',
+                'existing-user' => 'Ya existe un usuario de MariaDB que no administra Freyja.',
+                'existing-database' => 'Ya existe una base de datos que no administra Freyja.',
+                'connection' => 'MariaDB no aceptó la conexión local de administración.',
+                'configuration' => 'La configuración enviada a MariaDB no es válida.',
+            ];
+            if (preg_match('/^Database administration failed \[([a-z-]+)\]\.$/', $reason, $matches) && isset($descriptions[$matches[1]])) {
+                $message .= ' Motivo: '.$descriptions[$matches[1]];
+            }
+
+            throw ValidationException::withMessages(['database' => $message]);
         }
         $site->databases()->update(['status' => 'active']);
         $site->databaseUsers()->update(['status' => 'active']);

@@ -154,7 +154,14 @@ try {
     }
     echo "Domain databases and grants applied.\n";
 } catch (Throwable $exception) {
-    // Do not expose PDO messages: they may contain credentials.
-    fwrite(STDERR, "Database administration failed. Check MariaDB and the domain ownership registry.\n");
+    $reason = match ($exception->getMessage()) {
+        'Busy' => 'busy',
+        'Registry unavailable', 'Registry write failed', 'Registry commit failed' => 'registry',
+        'Resources belong to another domain' => 'ownership-conflict',
+        'Unmanaged account exists' => 'existing-user',
+        'Unmanaged database exists' => 'existing-database',
+        default => $exception instanceof PDOException ? 'connection' : 'configuration',
+    };
+    fwrite(STDERR, "Database administration failed [$reason].\n");
     exit(1);
 }
