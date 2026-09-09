@@ -312,6 +312,7 @@ branch="$(runuser -u "$git_user" -- env "HOME=$git_home" git -C "$app_path" symb
 [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo 'Panel branch is invalid' >&2; exit 64; }
 runuser -u "$git_user" -- env "HOME=$git_home" git -C "$app_path" fetch --prune origin "$branch"
 git -c safe.directory="$app_path" -C "$app_path" reset --hard "origin/$branch"
+install -o root -g root -m 0644 "$app_path/ops-agent/minipanel-git.php" /usr/local/lib/minipanel-git.php
 install -o root -g root -m 0750 "$app_path/ops-agent/minipanel-agent" /usr/local/bin/minipanel-agent
 COMPOSER_ALLOW_SUPERUSER=1 /usr/bin/php"$php_version" /usr/bin/composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --working-dir="$app_path"
 npm --prefix "$app_path" ci --no-audit --no-fund
