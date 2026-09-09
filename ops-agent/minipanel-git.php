@@ -30,7 +30,7 @@ final class MiniPanelGit
             }
             chmod($path, 0700);
         }
-        $this->environment = ['HOME' => $this->root, 'PUPPETEER_CACHE_DIR' => $this->root.'/.cache/puppeteer', 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'LANG' => 'C.UTF-8', 'GIT_TERMINAL_PROMPT' => '0', 'GIT_CONFIG_NOSYSTEM' => '1', 'GIT_CONFIG_GLOBAL' => '/dev/null'];
+        $this->environment = ['HOME' => $this->root, 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'LANG' => 'C.UTF-8', 'GIT_TERMINAL_PROMPT' => '0', 'GIT_CONFIG_NOSYSTEM' => '1', 'GIT_CONFIG_GLOBAL' => '/dev/null'];
     }
 
     public function execute(string $action, array $data): array
@@ -312,17 +312,18 @@ final class MiniPanelGit
             if (! is_file($target.'/package.json')) {
                 throw new RuntimeException('El proyecto no tiene package.json. Inicializa Node.js antes de instalar Puppeteer.');
             }
+            $puppeteerEnvironment = [...$this->environment, 'PUPPETEER_CACHE_DIR' => $target.'/.cache/puppeteer'];
             $this->step('Instalando Puppeteer para este proyecto');
-            $this->run($this->npmCommand('install', 'puppeteer', '--save', '--no-audit', '--no-fund'), $target);
+            $this->run($this->npmCommand('install', 'puppeteer', '--save', '--no-audit', '--no-fund'), $target, environment: $puppeteerEnvironment);
             $this->done();
             $this->step('Descargando Google Chrome');
-            $this->run($this->npmCommand('exec', 'puppeteer', 'browsers', 'install', 'chrome'), $target);
+            $this->run($this->npmCommand('exec', 'puppeteer', 'browsers', 'install', 'chrome'), $target, environment: $puppeteerEnvironment);
             $node = $this->nodeCommand('-e', 'const puppeteer = require("puppeteer"); Promise.resolve(puppeteer.executablePath()).then((path) => process.stdout.write(path)).catch((error) => { console.error(error); process.exitCode = 1; });')[0];
-            $browser = trim($this->run([$node, '-e', 'const puppeteer = require("puppeteer"); Promise.resolve(puppeteer.executablePath()).then((path) => process.stdout.write(path)).catch((error) => { console.error(error); process.exitCode = 1; });'], $target));
-            if ($browser === '' || ! str_starts_with($browser, $this->root.'/')) {
+            $browser = trim($this->run([$node, '-e', 'const puppeteer = require("puppeteer"); Promise.resolve(puppeteer.executablePath()).then((path) => process.stdout.write(path)).catch((error) => { console.error(error); process.exitCode = 1; });'], $target, environment: $puppeteerEnvironment));
+            if ($browser === '' || ! str_starts_with($browser, $target.'/')) {
                 throw new RuntimeException('No se pudo localizar el navegador instalado para este sitio.');
             }
-            $cache = $this->environment['PUPPETEER_CACHE_DIR'];
+            $cache = $puppeteerEnvironment['PUPPETEER_CACHE_DIR'];
             $this->done("Listo. Agrega al .env:\nNODE_BINARY={$node}\nPUPPETEER_CACHE_DIR={$cache}\nPUPPETEER_EXECUTABLE_PATH={$browser}");
 
             return ['browser_path' => $browser, 'cache_path' => $cache];
@@ -480,9 +481,9 @@ final class MiniPanelGit
         return $this->run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'protocol.file.allow=never', ...$arguments], $directory);
     }
 
-    private function run(array $command, string $directory, bool $showOutput = true, ?string $input = null, ?string $failureMessage = null): string
+    private function run(array $command, string $directory, bool $showOutput = true, ?string $input = null, ?string $failureMessage = null, ?array $environment = null): string
     {
-        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $directory, $this->environment);
+        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $directory, $environment ?? $this->environment);
         if (! is_resource($process)) {
             throw new RuntimeException('No se pudo iniciar el proceso.');
         }
