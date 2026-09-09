@@ -1,4 +1,5 @@
 import './dns-map';
+import './database-transfer';
 import { Passkeys } from '@laravel/passkeys';
 
 const passkeyError = (error) => error?.message || 'No se pudo completar la operación con passkey.';

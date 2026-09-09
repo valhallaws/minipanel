@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -28,9 +29,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         RateLimiter::for('login', function (Request $request) {
-            return Limit::perMinute(5)->by(
-                strtolower((string) $request->input('email')).'|'.$request->ip()
-            );
+            $login = $request->input('login', $request->input('email'));
+            $login = is_string($login) && strlen($login) <= 254 ? strtolower(trim($login)) : '';
+            $user = $login !== '' ? User::findForLogin($login) : null;
+
+            return Limit::perMinute(5)->by(($user ? 'user:'.$user->id : 'login:'.hash('sha256', $login)).'|'.$request->ip());
         });
 
         Event::listen(PasskeyRegistered::class, function (PasskeyRegistered $event): void {

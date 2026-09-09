@@ -21,10 +21,11 @@ class ServerReadiness
             $this->command('Redis', ['redis-cli', 'ping']),
         ];
 
+        $agentInstalled = is_file('/usr/local/bin/minipanel-agent');
         $checks[] = [
             'name' => 'Agente MiniPanel',
-            'status' => is_executable('/usr/local/bin/minipanel-agent') ? 'ok' : 'warning',
-            'detail' => is_executable('/usr/local/bin/minipanel-agent') ? 'Instalado y ejecutable' : 'Aún no instalado',
+            'status' => $agentInstalled ? 'ok' : 'warning',
+            'detail' => $agentInstalled ? 'Instalado; acceso delegado mediante sudo' : 'Aún no instalado',
         ];
         $checks[] = [
             'name' => 'Ejecución administrativa',

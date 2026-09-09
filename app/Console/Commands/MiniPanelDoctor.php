@@ -34,7 +34,7 @@ class MiniPanelDoctor extends Command
             $failed = $failed || ! $ok;
         }
 
-        $this->line(sprintf('%-24s %s', 'Agent', is_executable('/usr/local/bin/minipanel-agent') ? '<fg=green>OK</>' : '<fg=yellow>NOT INSTALLED</>'));
+        $this->line(sprintf('%-24s %s', 'Agent', is_file('/usr/local/bin/minipanel-agent') ? '<fg=green>OK</>' : '<fg=yellow>NOT INSTALLED</>'));
         $this->line(sprintf('%-24s %s', 'Execution switch', config('minipanel.execution_enabled') ? '<fg=yellow>ENABLED</>' : '<fg=green>DISABLED</>'));
 
         return $failed ? self::FAILURE : self::SUCCESS;

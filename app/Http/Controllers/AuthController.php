@@ -17,8 +17,12 @@ class AuthController extends Controller
         return view('auth.login');
     }
 
-    public function confirmPassword(): View
+    public function confirmPassword(Request $request): View
     {
+        if ($request->query('intended') === route('server.terminal')) {
+            $request->session()->put('url.intended', route('server.terminal'));
+        }
+
         return view('auth.confirm-password');
     }
 
@@ -37,12 +41,13 @@ class AuthController extends Controller
 
     public function store(Request $request, AuditLogger $audit): RedirectResponse
     {
-        $credentials = $request->validate(['email' => ['required', 'email'], 'password' => ['required']]);
-        $user = User::where('email', $credentials['email'])->first();
+        $request->merge(['login' => $request->input('login', $request->input('email'))]);
+        $credentials = $request->validate(['login' => ['required', 'string', 'max:254'], 'password' => ['required', 'string']]);
+        $user = User::findForLogin($credentials['login']);
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             $audit->record('auth.login_failed', null, [], $user?->id);
 
-            return back()->withErrors(['email' => 'Credenciales inválidas.'])->onlyInput('email');
+            return back()->withErrors(['login' => 'Credenciales inválidas.'])->onlyInput('login');
         }
         if ($user->two_factor_confirmed_at) {
             $request->session()->regenerate();

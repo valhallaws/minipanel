@@ -1,0 +1,10 @@
+[Unit]
+Description=MiniPanel scheduled maintenance
+
+[Service]
+Type=oneshot
+User=minipanel-control
+WorkingDirectory=/var/www/minipanel
+ExecStart=/usr/bin/php artisan schedule:run --no-interaction
+PrivateTmp=true
+ProtectHome=true

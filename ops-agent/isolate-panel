@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Run only after reviewing the current VPS inventory. Never grants sudo to www-data.
+set -euo pipefail
+[[ $EUID == 0 ]] || exit 77
+panel_domain="${1:-}"
+domain="${2:-}"
+for value in "$panel_domain" "$domain"; do
+  [[ "$value" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])$ && "$value" != *..* && "$value" == *.* ]] || exit 64
+done
+[[ "$domain" != "$panel_domain" ]] || exit 64
+panel='/var/www/minipanel'
+control='minipanel-control'
+site_user="mp_${domain//./_}"
+site_root="/var/www/$domain"
+backup='/var/backups/minipanel-isolation-20260907'
+[[ -d "$panel" && ! -L "$panel" && -d "$site_root" && ! -L "$site_root" ]] || exit 64
+[[ -f "/etc/nginx/sites-available/$panel_domain" && -f "/etc/nginx/sites-available/$domain" ]] || exit 64
+id "$site_user" >/dev/null
+install -d -m 0700 "$backup"
+if [[ ! -f "$backup/configuration.tar" ]]; then
+  tar -cf "$backup/configuration.tar" /etc/php/8.3/fpm/pool.d /etc/nginx/sites-available /etc/systemd/system/minipanel-worker.service /etc/systemd/system/minipanel-scheduler.service /etc/minipanel/panel-user
+fi
+id "$control" >/dev/null 2>&1 || useradd --system --user-group --no-create-home --home-dir "$panel" --shell /usr/sbin/nologin "$control"
+[[ "$(id -u "$control")" != 0 && "$(id -gn "$control")" == "$control" ]] || exit 77
+systemctl stop minipanel-scheduler.timer minipanel-worker php8.3-fpm
+# Fail closed: the previous shared identity remains without privileged access.
+if [[ -f /etc/sudoers.d/minipanel ]]; then mv /etc/sudoers.d/minipanel "$backup/sudoers.disabled"; fi
+gpasswd -d "$site_user" www-data || true
+gpasswd -d "$control" www-data || true
+chown root:"$control" "$panel"
+chmod 0711 "$panel"
+# Restrict panel source and secrets. Never follow links or change hosted-site trees.
+find -P "$panel" -mindepth 1 -maxdepth 1 ! -name public ! -name storage ! -name .git -exec chown -h root:"$control" {} +
+find -P "$panel" -mindepth 1 -maxdepth 1 ! -name public ! -name storage ! -name .git -exec chmod o-rwx {} +
+chown -R -P "$control":"$control" "$panel/storage" "$panel/bootstrap/cache"
+chmod 0700 "$panel/storage" "$panel/bootstrap/cache"
+chmod 0640 "$panel/.env"
+for path in /var/lib/minipanel /var/lib/minipanel/downloads /var/lib/minipanel/database-exports; do
+  [[ -d "$path" ]] && chown root:"$control" "$path"
+done
+for path in /var/lib/minipanel/downloads /var/lib/minipanel/database-exports; do
+  [[ ! -d "$path" ]] || find -P "$path" -mindepth 1 -group www-data -exec chgrp "$control" {} +
+done
+printf '%s\n' "$control" > /etc/minipanel/panel-user
+chmod 0600 /etc/minipanel/panel-user
+cat > /etc/php/8.3/fpm/pool.d/minipanel-control.conf <<EOF
+[minipanel-control]
+user = $control
+group = $control
+listen = /run/php/minipanel-control.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+pm = ondemand
+pm.max_children = 8
+pm.process_idle_timeout = 10s
+clear_env = yes
+security.limit_extensions = .php
+EOF
+cat > "/etc/php/8.3/fpm/pool.d/minipanel-$domain.conf" <<EOF
+[minipanel-$domain]
+user = $site_user
+group = $(id -gn "$site_user")
+listen = /run/php/minipanel-$domain-8.3.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+pm = ondemand
+pm.max_children = 5
+pm.process_idle_timeout = 10s
+clear_env = yes
+security.limit_extensions = .php
+EOF
+sed -i 's|unix:/run/php/php8.3-fpm.sock|unix:/run/php/minipanel-control.sock|g' "/etc/nginx/sites-available/$panel_domain"
+sed -i "s|unix:/run/php/php8.3-fpm.sock|unix:/run/php/minipanel-$domain-8.3.sock|g" "/etc/nginx/sites-available/$domain"
+sed -i "s/^User=.*/User=$control/" /etc/systemd/system/minipanel-worker.service /etc/systemd/system/minipanel-scheduler.service
+/usr/sbin/php-fpm8.3 -t
+nginx -t
+systemctl daemon-reload
+systemctl start php8.3-fpm
+systemctl reload nginx
+sudo -u "$control" /usr/bin/php "$panel/artisan" view:clear --no-interaction
+sudo -u "$control" /usr/bin/php "$panel/artisan" config:clear --no-interaction
+printf '%s ALL=(root) NOPASSWD: /usr/local/bin/minipanel-agent *\n' "$control" > "$backup/sudoers.new"
+visudo -cf "$backup/sudoers.new"
+install -o root -g root -m 0440 "$backup/sudoers.new" /etc/sudoers.d/minipanel
+visudo -c
+systemctl start minipanel-worker minipanel-scheduler.timer
+echo 'Dedicated PHP identities enabled; shared user privilege removed.'

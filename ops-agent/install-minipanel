@@ -6,9 +6,11 @@ set -euo pipefail
 apply=0
 with_firewall=0
 app_path='/var/www/minipanel'
-app_user='www-data'
+app_user='minipanel-control'
 php_version='8.3'
-panel_domain=''
+panel_ip=''
+panel_port='8443'
+certificate_email=''
 file_transfer_max_mb='2048'
 
 usage() {
@@ -17,9 +19,11 @@ Usage: sudo ./ops-agent/install-minipanel [options]
 
   --apply                    Make changes (otherwise only prints the plan)
   --app-path /var/www/panel  Laravel MiniPanel directory
-  --app-user www-data        User that runs PHP-FPM and the worker
+  --app-user minipanel-control Dedicated panel PHP-FPM and worker user
   --php-version 8.3          PHP version to install for the panel
-  --panel-domain panel.tld   Create an HTTP Nginx vhost for MiniPanel
+  --panel-ip 203.0.113.10    Public IPv4 used to access MiniPanel (required)
+  --panel-port 8443          HTTPS port for MiniPanel (default: 8443)
+  --certificate-email you@x  ACME contact email for the IP certificate (required)
   --file-transfer-max-mb N   Maximum File Manager transfer size (default: 2048)
   --with-firewall            Configure UFW for OpenSSH and Nginx Full
 EOF
@@ -29,13 +33,15 @@ while (($#)); do
   case "$1" in
     --apply) apply=1 ;;
     --with-firewall) with_firewall=1 ;;
-    --app-path|--app-user|--php-version|--panel-domain|--file-transfer-max-mb)
+    --app-path|--app-user|--php-version|--panel-ip|--panel-port|--certificate-email|--file-transfer-max-mb)
       (($# >= 2)) || { usage >&2; exit 64; }
       case "$1" in
         --app-path) app_path="$2" ;;
         --app-user) app_user="$2" ;;
         --php-version) php_version="$2" ;;
-        --panel-domain) panel_domain="$2" ;;
+        --panel-ip) panel_ip="$2" ;;
+        --panel-port) panel_port="$2" ;;
+        --certificate-email) certificate_email="$2" ;;
         --file-transfer-max-mb) file_transfer_max_mb="$2" ;;
       esac
       shift ;;
@@ -48,13 +54,23 @@ done
 [[ $EUID -eq 0 ]] || { echo 'Run with sudo/root.' >&2; exit 77; }
 [[ "$app_path" =~ ^/var/www/[A-Za-z0-9._-]+$ ]] || { echo 'app-path must be a direct child of /var/www.' >&2; exit 64; }
 [[ "$app_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo 'Invalid app user.' >&2; exit 64; }
-[[ "$php_version" =~ ^8\.[234]$ ]] || { echo 'Supported PHP versions are 8.2, 8.3 and 8.4.' >&2; exit 64; }
+[[ "$app_user" != 'www-data' && "$app_user" != 'root' && "$app_user" != mp_* ]] || { echo 'The panel requires a dedicated control-plane identity.' >&2; exit 64; }
+[[ "$php_version" =~ ^8\.[0-9]{1,2}$ ]] || { echo 'Use a PHP 8.x version, for example 8.4.' >&2; exit 64; }
 [[ "$file_transfer_max_mb" =~ ^[0-9]+$ && "$file_transfer_max_mb" -ge 128 && "$file_transfer_max_mb" -le 10240 ]] || { echo 'file-transfer-max-mb must be between 128 and 10240.' >&2; exit 64; }
-[[ -z "$panel_domain" || "$panel_domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] || { echo 'Invalid panel domain.' >&2; exit 64; }
+[[ "$panel_ip" =~ ^((25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})$ ]] || { echo 'panel-ip must be a public IPv4 address.' >&2; exit 64; }
+[[ "$panel_port" =~ ^[0-9]+$ && "$panel_port" -ge 1024 && "$panel_port" -le 65535 ]] || { echo 'panel-port must be between 1024 and 65535.' >&2; exit 64; }
+[[ "$certificate_email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || { echo 'certificate-email must be valid.' >&2; exit 64; }
 [[ -f /etc/os-release ]] && . /etc/os-release
 [[ "${ID:-}" == 'ubuntu' ]] || { echo 'This installer supports Ubuntu only.' >&2; exit 69; }
 
-run() { printf '+ '; printf '%q ' "$@"; printf '\n'; ((apply)) && "$@"; }
+run() {
+  printf '+ '
+  printf '%q ' "$@"
+  printf '\n'
+  if ((apply)); then
+    "$@"
+  fi
+}
 copy_file() {
   local source="$1" destination="$2" mode="$3"
   printf '+ install %s %s\n' "$source" "$destination"
@@ -70,6 +86,185 @@ write_root_value() {
   fi
 }
 
+environment_value() {
+  local key="$1" value
+  value="$(grep -m 1 "^${key}=" "$app_path/.env" || true)"
+  printf '%s' "${value#*=}"
+}
+
+provision_panel_database() {
+  local connection host port database username password sql_file
+  connection="$(environment_value DB_CONNECTION)"
+  host="$(environment_value DB_HOST)"
+  port="$(environment_value DB_PORT)"
+  database="$(environment_value DB_DATABASE)"
+  username="$(environment_value DB_USERNAME)"
+  password="$(environment_value DB_PASSWORD)"
+
+  [[ "$connection" =~ ^(mysql|mariadb)$ ]] || { echo 'DB_CONNECTION must be mysql or mariadb.' >&2; exit 66; }
+  [[ "$host" =~ ^(127\.0\.0\.1|localhost)$ && "$port" == '3306' ]] || { echo 'This installer provisions only a local MariaDB database on 127.0.0.1:3306.' >&2; exit 66; }
+  [[ "$database" =~ ^[A-Za-z0-9_]{1,64}$ ]] || { echo 'Invalid DB_DATABASE.' >&2; exit 66; }
+  [[ "$username" =~ ^[A-Za-z0-9_]{1,32}$ ]] || { echo 'Invalid DB_USERNAME.' >&2; exit 66; }
+  [[ "$password" =~ ^[A-Za-z0-9_-]{32,128}$ ]] || { echo 'DB_PASSWORD must be a 32-128 character random alphanumeric, underscore, or dash value.' >&2; exit 66; }
+
+  printf '+ provision local MariaDB database and least-privilege user\n'
+  ((apply)) || return 0
+  sql_file="$(mktemp)"
+  chmod 0600 "$sql_file"
+  cat > "$sql_file" <<EOF
+CREATE DATABASE IF NOT EXISTS \`$database\` CHARACTER SET utf8mb4 COLLATE utf8mb4_spanish2_ci;
+CREATE USER IF NOT EXISTS '$username'@'127.0.0.1' IDENTIFIED BY '$password';
+ALTER USER '$username'@'127.0.0.1' IDENTIFIED BY '$password';
+GRANT ALL PRIVILEGES ON \`$database\`.* TO '$username'@'127.0.0.1';
+FLUSH PRIVILEGES;
+EOF
+  mariadb < "$sql_file"
+  rm -f "$sql_file"
+}
+
+configure_node_source() {
+  local architecture
+
+  printf '+ configure NodeSource Node.js 22 repository\n'
+  ((apply)) || return 0
+  architecture="$(dpkg --print-architecture)"
+  [[ "$architecture" =~ ^(amd64|arm64)$ ]] || { echo "Unsupported Node.js architecture: $architecture" >&2; exit 69; }
+  install -d -m 0755 /etc/apt/keyrings
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+  chmod 0644 /etc/apt/keyrings/nodesource.gpg
+  printf 'Types: deb\nURIs: https://deb.nodesource.com/node_22.x\nSuites: nodistro\nComponents: main\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/nodesource.gpg\n' "$architecture" > /etc/apt/sources.list.d/nodesource.sources
+  apt-get update
+}
+
+configure_php_source() {
+  local launchpad_home='/var/lib/minipanel/launchpadlib'
+
+  grep -Rqs 'ondrej/php' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null && return 0
+
+  printf '+ configure Ondřej Surý PHP repository for PHP %s\n' "$php_version"
+  if ((apply)); then
+    command -v add-apt-repository >/dev/null 2>&1 || env DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
+    install -d -m 0700 -o root -g root "$launchpad_home"
+    HOME="$launchpad_home" XDG_CACHE_HOME="$launchpad_home" add-apt-repository -y ppa:ondrej/php
+    apt-get update
+    apt-cache show "php${php_version}-fpm" >/dev/null 2>&1 || { echo "PHP $php_version is unavailable for this server." >&2; exit 69; }
+  fi
+}
+
+verify_node_version() {
+  ((apply)) || return 0
+  node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 12) ? 0 : 1)' || { echo 'MiniPanel requires Node.js 22.12 or newer.' >&2; exit 69; }
+}
+
+write_panel_http_challenge_vhost() {
+  local nginx_template acme_root='/var/lib/minipanel/acme' nginx_file='/etc/nginx/sites-available/minipanel-control'
+
+  nginx_template="$(mktemp)"
+  cat > "$nginx_template" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $panel_ip;
+    root $acme_root;
+    location ^~ /.well-known/acme-challenge/ { try_files \$uri =404; }
+    location / { return 308 https://\$host:$panel_port\$request_uri; }
+}
+EOF
+  copy_file "$nginx_template" "$nginx_file" 0644
+  rm -f "$nginx_template"
+  run ln -sfn "$nginx_file" /etc/nginx/sites-enabled/minipanel-control
+}
+
+install_ip_certificate() {
+  local certificate_name="minipanel-$panel_ip"
+
+  printf '+ install current Certbot and issue the short-lived IP certificate\n'
+  ((apply)) || return 0
+  systemctl enable --now snapd.socket
+  snap install --classic certbot >/dev/null 2>&1 || snap refresh certbot >/dev/null
+  ln -sfn /snap/bin/certbot /usr/local/bin/certbot
+  certbot certonly --webroot --webroot-path /var/lib/minipanel/acme --non-interactive --agree-tos --email "$certificate_email" --preferred-profile shortlived --ip-address "$panel_ip" --cert-name "$certificate_name" --keep-until-expiring
+}
+
+write_panel_https_vhost() {
+  local nginx_template nginx_file='/etc/nginx/sites-available/minipanel-control' certificate_name="minipanel-$panel_ip"
+
+  nginx_template="$(mktemp)"
+  cat > "$nginx_template" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $panel_ip;
+    root /var/lib/minipanel/acme;
+    location ^~ /.well-known/acme-challenge/ { try_files \$uri =404; }
+    location / { return 308 https://\$host:$panel_port\$request_uri; }
+}
+
+server {
+    listen $panel_port ssl;
+    listen [::]:$panel_port ssl;
+    server_name $panel_ip;
+    root $app_path/public;
+    index index.php;
+    client_max_body_size ${file_transfer_max_mb}m;
+    ssl_certificate /etc/letsencrypt/live/$certificate_name/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$certificate_name/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    location / { try_files \$uri \$uri/ /index.php?\$query_string; }
+    location ~ \.php\$ { include snippets/fastcgi-php.conf; fastcgi_pass unix:/run/php/minipanel-control.sock; }
+    location ~ /\. { deny all; }
+}
+EOF
+  copy_file "$nginx_template" "$nginx_file" 0644
+  rm -f "$nginx_template"
+}
+
+write_ip_certificate_renewal_timer() {
+  local renewal_script service timer certificate_name="minipanel-$panel_ip"
+
+  printf '+ install Freyja IP certificate check timer (renews only inside its window)\n'
+  ((apply)) || return 0
+  renewal_script="$(mktemp)"
+  service="$(mktemp)"
+  timer="$(mktemp)"
+  cat > "$renewal_script" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+certificate='/etc/letsencrypt/live/$certificate_name/cert.pem'
+# IP certificates are short-lived. Check locally twice a day and contact the
+# ACME server only when three days or less remain, or the certificate is absent.
+if [[ ! -s "\$certificate" ]] || ! /usr/bin/openssl x509 -checkend 259200 -noout -in "\$certificate" >/dev/null 2>&1; then
+    exec /usr/local/bin/certbot renew --cert-name '$certificate_name' --quiet --deploy-hook='/usr/bin/systemctl reload nginx'
+fi
+EOF
+  cat > "$service" <<'EOF'
+[Unit]
+Description=Renew Freyja IP address certificate when required
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/freyja-renew-ip-certificate
+EOF
+  cat > "$timer" <<'EOF'
+[Unit]
+Description=Check Freyja IP address certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:15:00
+Persistent=true
+RandomizedDelaySec=20m
+
+[Install]
+WantedBy=timers.target
+EOF
+  copy_file "$renewal_script" /usr/local/sbin/freyja-renew-ip-certificate 0750
+  copy_file "$service" /etc/systemd/system/minipanel-ip-cert-renew.service 0644
+  copy_file "$timer" /etc/systemd/system/minipanel-ip-cert-renew.timer 0644
+  rm -f "$renewal_script" "$service" "$timer"
+}
+
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -f "$app_path/artisan" ]] || { echo "Laravel MiniPanel was not found at $app_path." >&2; exit 66; }
 [[ -f "$app_path/composer.json" && -f "$app_path/package-lock.json" ]] || { echo "composer.json and package-lock.json are required." >&2; exit 66; }
@@ -79,51 +274,93 @@ grep -qE '^APP_KEY=base64:[A-Za-z0-9+/]{43}=$' "$app_path/.env" || { echo 'Gener
 grep -qE '^PASSKEYS_USER_HANDLE_SECRET=.{32,}$' "$app_path/.env" || { echo 'Set a permanent PASSKEYS_USER_HANDLE_SECRET of at least 32 characters before installing.' >&2; exit 66; }
 grep -qE '^MINIPANEL_EXECUTION_ENABLED=false$' "$app_path/.env" || { echo 'Keep MINIPANEL_EXECUTION_ENABLED=false during installation.' >&2; exit 66; }
 
-packages=(nginx git unzip curl ca-certificates composer certbot python3-certbot-nginx mariadb-client redis-server supervisor fail2ban ufw dnsutils nodejs npm "php${php_version}-cli" "php${php_version}-fpm" "php${php_version}-bcmath" "php${php_version}-curl" "php${php_version}-mbstring" "php${php_version}-mysql" "php${php_version}-xml" "php${php_version}-zip" "php${php_version}-gd" "php${php_version}-intl" "php${php_version}-redis")
+bootstrap_packages=(curl ca-certificates gnupg software-properties-common snapd)
+packages=(nginx git unzip zip composer mariadb-client mariadb-server redis-server supervisor fail2ban ufw dnsutils nodejs "php${php_version}-cli" "php${php_version}-fpm" "php${php_version}-bcmath" "php${php_version}-curl" "php${php_version}-mbstring" "php${php_version}-mysql" "php${php_version}-xml" "php${php_version}-zip" "php${php_version}-gd" "php${php_version}-intl" "php${php_version}-redis")
 echo "MiniPanel installer: $([[ $apply -eq 1 ]] && echo APPLY || echo DRY RUN)"
-echo "Panel: $app_path | User: $app_user | PHP: $php_version"
+echo "Panel: https://$panel_ip:$panel_port | User: $app_user | PHP: $php_version"
 run apt-get update
+run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${bootstrap_packages[@]}"
+configure_php_source
+configure_node_source
 run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
-id "$app_user" >/dev/null 2>&1 || { echo "User $app_user does not exist after package installation." >&2; exit 67; }
-app_group="$(id -gn "$app_user")"
+verify_node_version
+provision_panel_database
+if ! id "$app_user" >/dev/null 2>&1; then
+  run useradd --system --user-group --no-create-home --home-dir "$app_path" --shell /usr/sbin/nologin "$app_user"
+fi
+app_group="$app_user"
+if ((apply)); then
+  [[ "$(id -gn "$app_user")" == "$app_user" ]] || { echo 'Panel user must have a private primary group.' >&2; exit 77; }
+fi
 run install -d -m 0700 -o root -g root /etc/minipanel /etc/minipanel/deploy-keys /etc/minipanel/aliases
 run install -d -m 0750 -o root -g "$app_group" /var/lib/minipanel /var/lib/minipanel/downloads
+run install -d -m 0755 -o root -g root /var/lib/minipanel/acme
 write_root_value /etc/minipanel/panel-storage-path "$app_path/storage/app/private"
 write_root_value /etc/minipanel/panel-user "$app_user"
 write_root_value /etc/minipanel/file-transfer-max-bytes "$((file_transfer_max_mb * 1024 * 1024))"
 write_root_value /etc/minipanel/download-root /var/lib/minipanel/downloads
-run install -d -m 0750 -o "$app_user" -g www-data "$app_path/storage" "$app_path/bootstrap/cache"
+run install -d -m 0750 -o "$app_user" -g "$app_group" \
+  "$app_path/storage/app" \
+  "$app_path/storage/framework/cache/data" \
+  "$app_path/storage/framework/sessions" \
+  "$app_path/storage/framework/views" \
+  "$app_path/storage/logs" \
+  "$app_path/bootstrap/cache"
+run chown -R "$app_user":"$app_group" "$app_path/storage" "$app_path/bootstrap/cache"
+run chmod -R ug+rwX "$app_path/storage" "$app_path/bootstrap/cache"
+run chown root:"$app_group" "$app_path/.env"
+run chmod 0640 "$app_path/.env"
 run env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --working-dir="$app_path"
 run npm --prefix "$app_path" ci --no-audit --no-fund
 run npm --prefix "$app_path" run build
 run chown -R root:root "$app_path/vendor" "$app_path/node_modules" "$app_path/public/build"
 copy_file "$source_root/ops-agent/minipanel-agent" /usr/local/bin/minipanel-agent 0750
-copy_file "$source_root/ops-agent/sudoers-minipanel" /etc/sudoers.d/minipanel 0440
+copy_file "$source_root/ops-agent/minipanel-database.php" /usr/local/lib/minipanel-database.php 0640
+copy_file "$source_root/ops-agent/minipanel-database-operation.php" /usr/local/lib/minipanel-database-operation.php 0640
+copy_file "$source_root/ops-agent/minipanel-snapshot.cjs" /usr/local/lib/minipanel-snapshot.cjs 0644
+copy_file "$source_root/ops-agent/minipanel-site-lifecycle.php" /usr/local/lib/minipanel-site-lifecycle.php 0640
+copy_file "$source_root/ops-agent/minipanel-git.php" /usr/local/lib/minipanel-git.php 0644
+copy_file "$source_root/ops-agent/minipanel-extract.py" /usr/local/lib/minipanel-extract.py 0644
+if ((apply)); then
+  identity_rule="$(mktemp)"
+  printf '%s ALL=(root) NOPASSWD: /usr/local/bin/minipanel-agent *\n' "$app_user" > "$identity_rule"
+  visudo -cf "$identity_rule"
+  copy_file "$identity_rule" /etc/sudoers.d/minipanel 0440
+  rm -f "$identity_rule"
+  cat > "/etc/php/$php_version/fpm/pool.d/minipanel-control.conf" <<EOF
+[minipanel-control]
+user = $app_user
+group = $app_group
+listen = /run/php/minipanel-control.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+pm = ondemand
+pm.max_children = 8
+pm.process_idle_timeout = 10s
+clear_env = yes
+security.limit_extensions = .php
+EOF
+  chown root:"$app_group" "$app_path"
+  chmod 0711 "$app_path"
+  find -P "$app_path" -mindepth 1 -maxdepth 1 ! -name public ! -name storage ! -name .git -exec chown -h root:"$app_group" {} +
+  find -P "$app_path" -mindepth 1 -maxdepth 1 ! -name public ! -name storage ! -name .git -exec chmod o-rwx {} +
+  chmod 0700 "$app_path/storage" "$app_path/bootstrap/cache"
+  "/usr/sbin/php-fpm$php_version" -t
+fi
 
 worker_template="$(mktemp)"
 sed -e "s|^User=.*|User=$app_user|" -e "s|^WorkingDirectory=.*|WorkingDirectory=$app_path|" "$source_root/ops-agent/minipanel-worker.service" > "$worker_template"
 copy_file "$worker_template" /etc/systemd/system/minipanel-worker.service 0644
 rm -f "$worker_template"
 
-if [[ -n "$panel_domain" ]]; then
-  nginx_template="$(mktemp)"
-  cat > "$nginx_template" <<EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $panel_domain;
-    root $app_path/public;
-    index index.php;
-    client_max_body_size ${file_transfer_max_mb}m;
-    location / { try_files \$uri \$uri/ /index.php?\$query_string; }
-    location ~ \.php\$ { include snippets/fastcgi-php.conf; fastcgi_pass unix:/run/php/php$php_version-fpm.sock; }
-    location ~ /\. { deny all; }
-}
-EOF
-  copy_file "$nginx_template" "/etc/nginx/sites-available/$panel_domain" 0644
-  rm -f "$nginx_template"
-  run ln -sfn "/etc/nginx/sites-available/$panel_domain" "/etc/nginx/sites-enabled/$panel_domain"
-fi
+scheduler_template="$(mktemp)"
+sed -e "s|^User=.*|User=$app_user|" -e "s|^WorkingDirectory=.*|WorkingDirectory=$app_path|" "$source_root/ops-agent/minipanel-scheduler.service" > "$scheduler_template"
+copy_file "$scheduler_template" /etc/systemd/system/minipanel-scheduler.service 0644
+copy_file "$source_root/ops-agent/minipanel-scheduler.timer" /etc/systemd/system/minipanel-scheduler.timer 0644
+rm -f "$scheduler_template"
+
+write_panel_http_challenge_vhost
 
 php_upload_ini="/etc/php/$php_version/fpm/conf.d/99-minipanel-uploads.ini"
 printf '+ write %s\n' "$php_upload_ini"
@@ -142,17 +379,26 @@ fi
 if ((with_firewall)); then
   run ufw allow OpenSSH
   run ufw allow 'Nginx Full'
+  run ufw allow "${panel_port}/tcp"
   run ufw --force enable
 fi
 
 run systemctl daemon-reload
-run systemctl enable nginx redis-server fail2ban minipanel-worker
-run systemctl restart "php${php_version}-fpm" nginx redis-server fail2ban minipanel-worker
+run systemctl enable mariadb nginx redis-server fail2ban minipanel-worker minipanel-scheduler.timer
+run systemctl restart mariadb "php${php_version}-fpm" nginx redis-server fail2ban minipanel-worker
+install_ip_certificate
+write_panel_https_vhost
+run nginx -t
+run systemctl reload nginx
+write_ip_certificate_renewal_timer
+run systemctl daemon-reload
+run systemctl enable --now minipanel-ip-cert-renew.timer
 run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" migrate --force --no-interaction
-run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" storage:link
+run env APP_ENV=production php "$app_path/artisan" storage:link
 run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" optimize
+run systemctl start minipanel-scheduler.timer
 run nginx -t
 
 echo
 echo 'Bootstrap complete. Next: set MINIPANEL_EXECUTION_ENABLED=true only after reviewing the agent, then run php artisan minipanel:doctor.'
-[[ -n "$panel_domain" ]] && echo "When DNS points to this VPS, issue SSL with: certbot --nginx -d $panel_domain"
+echo "MiniPanel is available only at: https://$panel_ip:$panel_port"

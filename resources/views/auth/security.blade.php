@@ -1,18 +1,4 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Seguridad · MiniPanel</title>
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-</head>
-<body>
-<main class="shell">
-    <header class="topbar">
-        <a class="brand" href="/"><span class="mark">MP</span> MiniPanel</a>
-        <a class="ghost" href="/">← Sitios</a>
-    </header>
+<x-layouts.app>
 
     <section class="hero">
         <div>
@@ -113,6 +99,4 @@
             <p class="muted">Aún no hay eventos.</p>
         @endforelse
     </section>
-</main>
-</body>
-</html>
+</x-layouts.app>

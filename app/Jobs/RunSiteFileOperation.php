@@ -34,9 +34,12 @@ class RunSiteFileOperation implements ShouldQueue
 
             $operation->update(['status' => 'running', 'started_at' => now(), 'output' => 'Procesando archivos en el VPS…']);
             $site = $operation->site;
+            if (! $site || $site->lifecycle_action) {
+                throw new \RuntimeException('El dominio no está disponible durante esta operación.');
+            }
             $command = [
                 'sudo', '/usr/local/bin/minipanel-agent', $operation->action,
-                $site->path, $site->domain, $site->repository ?? '', $site->branch,
+                $site->path, $site->resourceDomain(), $site->repository ?? '', $site->branch,
                 $site->php_version, $site->queue_enabled ? '1' : '0', $site->scheduler_enabled ? '1' : '0',
                 $site->runtime, implode(',', $site->php_extensions ?? []), $operation->path,
             ];
@@ -47,6 +50,10 @@ class RunSiteFileOperation implements ShouldQueue
 
             if ($operation->action === 'file-upload') {
                 $command[] = (string) $operation->upload_path;
+            }
+
+            if ($operation->action === 'file-extract') {
+                $command[] = $operation->content ?? 'skip';
             }
 
             if ($operation->action === 'file-download') {
@@ -79,6 +86,7 @@ class RunSiteFileOperation implements ShouldQueue
                     $updates['output'] = 'El agente devolvió contenido de archivo inválido.';
                 } else {
                     $updates['read_content'] = $contents;
+                    $updates['output'] = 'Archivo leído.';
                 }
             }
 
@@ -101,7 +109,7 @@ class RunSiteFileOperation implements ShouldQueue
         foreach (array_filter(explode("\n", trim($output))) as $line) {
             [$type, $name, $size, $modifiedAt] = array_pad(explode("\t", $line, 4), 4, '');
 
-            if (! in_array($type, ['d', 'f'], true) || ! preg_match('/^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/', $name)) {
+            if (! in_array($type, ['d', 'f'], true) || in_array($name, ['.git', '.ssh'], true) || ! preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._ -]{0,127}|\.[A-Za-z0-9][A-Za-z0-9._ -]{0,126})$/', $name)) {
                 continue;
             }
 

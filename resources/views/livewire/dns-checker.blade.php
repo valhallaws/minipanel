@@ -1,5 +1,5 @@
 <div @if($isRunning) wire:poll.1500ms @endif>
-    <header class="topbar"><a class="brand" href="/"><span class="mark">MP</span> MiniPanel</a><div class="server">Herramientas</div><a class="ghost" href="/">← Panel</a></header>
+    <header class="topbar"><a class="brand" href="/"><img class="freyja-brand-mark" src="/brand/freyja-isotipo.png" alt="">Freyja</a><div class="server">Herramientas</div><a class="ghost" href="/">← Panel</a></header>
     <section class="hero"><div><p class="eyebrow">HERRAMIENTA INDEPENDIENTE · GLOBALPING</p><h1>DNS Checker</h1><p class="muted">Cada medición pide hasta 8 sondas en México y 2 por continente. No monitorea ni vuelve a consultar por sí sola.</p></div></section>
     <section class="panel dns-tool">
         <form wire:submit="run" class="dns-form">

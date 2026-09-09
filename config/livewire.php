@@ -138,7 +138,7 @@ return [
             'mov', 'avi', 'wmv', 'mp3', 'm4a',
             'jpg', 'jpeg', 'mpga', 'webp', 'wma',
         ],
-        'max_upload_time' => env('MINIPANEL_FILE_UPLOAD_MAX_TIME', 120),
+        'max_upload_time' => (int) env('MINIPANEL_FILE_UPLOAD_MAX_TIME', 120),
         'cleanup' => true, // Should cleanup temporary uploads older than 24 hrs...
     ],
 

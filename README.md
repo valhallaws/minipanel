@@ -1,6 +1,6 @@
-# MiniPanel
+# Freyja
 
-Panel Laravel + Livewire para operar aplicaciones web en un VPS Ubuntu. Incluye login local, inventario de sitios, cola auditable y ejecución controlada de provisión/despliegue/SSL.
+Control del VPS para operar aplicaciones web en Ubuntu. Incluye login local, inventario de sitios, cola auditable y ejecución controlada de provisión, despliegue y SSL.
 
 ## Arranque local
 

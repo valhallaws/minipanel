@@ -8,7 +8,7 @@ class SiteFilePath
     {
         $path = trim($path, '/');
 
-        if ($path === '') {
+        if ($path === '' || $path === '.') {
             if ($allowRoot) {
                 return '.';
             }
@@ -19,7 +19,7 @@ class SiteFilePath
         $parts = explode('/', $path);
 
         foreach ($parts as $part) {
-            if ($part === '' || $part === '.' || $part === '..' || ! preg_match('/^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/', $part)) {
+            if ($part === '' || $part === '.' || $part === '..' || in_array($part, ['.git', '.ssh'], true) || ! preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._ -]{0,127}|\.[A-Za-z0-9][A-Za-z0-9._ -]{0,126})$/', $part)) {
                 abort(422, 'La ruta contiene caracteres o segmentos no permitidos.');
             }
         }

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run MiniPanel scheduled maintenance each minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=minipanel-scheduler.service
+
+[Install]
+WantedBy=timers.target

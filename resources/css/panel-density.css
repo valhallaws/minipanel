@@ -1,0 +1,114 @@
+/* Shared density overrides legacy page-specific spacing; exclude non-text controls. */
+html body :is(a[href], button, summary, select, [role=button], [role=link], [role=menuitem], [role=switch], input[type=button], input[type=submit], input[type=reset], input[type=checkbox], input[type=radio], [wire\:click], [wire\:click\.prevent], [wire\:click\.stop], [x-on\:click], [x-on\:click\.prevent], [\@click], [\@click\.prevent]) {
+    cursor: pointer;
+}
+html body :is(button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disabled=true]) {
+    cursor: not-allowed !important;
+}
+html body :is(.domain-group, .domain-child, .site-row) {
+    @apply rounded-md;
+}
+html body .domain-heading {
+    border-radius: 5px;
+}
+html body details[open] > .domain-heading {
+    border-radius: 5px 5px 0 0;
+}
+html body .domain-group > .embedded-domain,
+html body .domain-child > details > .embedded-domain {
+    border-radius: 0 0 5px 5px;
+}
+html body :is(select, .domain-status-options, .explorer-dropdown, [role=menu], [role=listbox]) {
+    @apply rounded-md!;
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--line) !important;
+}
+html body :is(select option, select optgroup) {
+    background: var(--surface);
+    color: var(--ink);
+}
+html body select { --field-radius: .375rem; }
+html body :is(.domain-status-options, .explorer-dropdown, [role=menu]) {
+    padding: 5px;
+    box-shadow: 0 8px 24px #0003;
+}
+html body :is(.domain-status-options, .explorer-dropdown, [role=menu]) :is(button, a, [role=menuitem]) {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 13px;
+    text-align: left;
+}
+html body :is(.domain-status-options, .explorer-dropdown, [role=menu]) :is(button, a, [role=menuitem]):is(:hover, :focus-visible) {
+    background: var(--surface-alt);
+    color: var(--ink);
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+}
+html body :is(input:not([type]), input[type=text], input[type=number], input[type=password], input[type=email], input[type=url], input[type=search], input[type=tel], textarea, select) {
+    @apply py-1.5! px-3!;
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+    border-radius: var(--field-radius, 3px) !important;
+    max-width: 100%;
+}
+html body :is(.primary, .secondary, .ghost, .tiny, .danger-button, button[type=submit], input[type=submit]) {
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+    font-weight: 500 !important;
+    border-radius: 3px !important;
+    min-height: 30px;
+}
+html body :is(dialog.git-dialog, dialog.database-dialog) {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100dvh - 32px);
+    padding: 20px;
+    overflow: auto;
+    color: var(--ink);
+}
+html body :is(.settings-backdrop, .explorer-modal-backdrop) {
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+html body .settings-drawer {
+    width: min(760px, 100%);
+    height: auto;
+    max-height: calc(100dvh - 32px);
+    margin: 0;
+    overflow: auto;
+    border-radius: 6px;
+}
+.maintenance-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin: 14px 0; }
+.maintenance-control { display: inline-flex; align-items: center; gap: 9px; }
+.maintenance-secret { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; }
+.maintenance-secret input { width: 240px; }
+html body button.maintenance-switch {
+    width: 34px; height: 20px; min-height: 20px; padding: 2px;
+    display: inline-flex; align-items: center; flex-shrink: 0;
+    border: 0; border-radius: 999px; background: var(--muted, #8b959f); cursor: pointer;
+}
+.maintenance-switch span { width: 16px; height: 16px; border-radius: 50%; background: white; transition: transform .15s; }
+.maintenance-switch[aria-checked=true] { background: var(--accent, #287cca); }
+.maintenance-switch[aria-checked=true] span { transform: translateX(14px); }
+.maintenance-switch:disabled { opacity: .5; cursor: wait; }
+.maintenance-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 600px) {
+    .maintenance-secret { flex-wrap: wrap; }
+    .maintenance-secret input { width: min(240px, 100%); }
+    html body :is(dialog.git-dialog, dialog.database-dialog) { padding: 16px; }
+}
+@media (pointer: coarse) {
+    html body :is(.primary, .secondary, .ghost, .tiny, .danger-button) { min-height: 40px; }
+    .maintenance-control { min-height: 40px; }
+}

@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 # Replace both values for the account and deployed MiniPanel directory.
-User=www-data
+User=minipanel-control
 WorkingDirectory=/var/www/minipanel
 ExecStart=/usr/bin/php artisan queue:work --tries=1 --timeout=7200 --sleep=2 --max-time=14400
 Restart=on-failure

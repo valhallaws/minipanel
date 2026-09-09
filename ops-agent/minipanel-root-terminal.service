@@ -1,0 +1,16 @@
+[Unit]
+Description=MiniPanel root terminal
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/ttyd --interface 127.0.0.1 --port 7681 --base-path /server-terminal/ --auth-header X-MiniPanel-Terminal --check-origin --writable --terminal-type xterm-256color /bin/bash -l
+Restart=always
+RestartSec=3
+NoNewPrivileges=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
