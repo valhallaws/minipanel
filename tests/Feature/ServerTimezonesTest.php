@@ -82,6 +82,20 @@ class ServerTimezonesTest extends TestCase
             ->assertSee('PHP-FPM '.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION);
     }
 
+    public function test_maintenance_displays_the_installed_panel_version_and_webhook_route(): void
+    {
+        Process::fake(fn () => Process::result("Rama\tmain\nCommit\t3608478\nFecha\t2026-09-09T12:00:00+00:00\n"));
+        config()->set('minipanel.panel_update_webhook_secret', 'panel-update-webhook-secret-for-tests');
+
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->call('selectServerSection', 'maintenance')
+            ->assertSee('3608478')
+            ->assertSee('Webhook de actualización')
+            ->assertSee(route('webhooks.panel-update'));
+
+        Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-update-status']);
+    }
+
     public function test_service_logs_use_only_an_allowlisted_read_only_agent_action(): void
     {
         Process::fake(fn () => Process::result('2026-09-08T10:00:00 nginx started'));

@@ -57,11 +57,38 @@ class ServerSetup extends Component
 
     public string $sshConfirmation = '';
 
+    public array $panelUpdateStatus = [];
+
     public function selectServerSection(string $section): void
     {
         abort_unless(Auth::check(), 403);
         abort_unless(in_array($section, ['overview', 'security', 'services', 'applications', 'dns', 'maintenance'], true), 422);
         $this->serverSection = $section;
+        if ($section === 'maintenance') {
+            $this->refreshPanelUpdateStatus();
+        }
+    }
+
+    public function refreshPanelUpdateStatus(): void
+    {
+        abort_unless(Auth::check(), 403);
+        $this->resetErrorBag('panelUpdate');
+
+        try {
+            $result = Process::timeout(15)->run(['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-update-status']);
+            if (! $result->successful()) {
+                $this->addError('panelUpdate', 'No se pudo leer la versión instalada de Freyja.');
+
+                return;
+            }
+            $this->panelUpdateStatus = collect(preg_split('/\R/', $result->output()))->filter()->mapWithKeys(function (string $line): array {
+                [$key, $value] = array_pad(explode("\t", $line, 2), 2, '');
+
+                return [$key => $value];
+            })->all();
+        } catch (\Throwable) {
+            $this->addError('panelUpdate', 'No se pudo contactar al agente del VPS.');
+        }
     }
 
     public function refreshServerStatus(): void
@@ -429,6 +456,11 @@ class ServerSetup extends Component
 
     public function render()
     {
-        return view('livewire.server-setup', ['dnsConfiguration' => DnsSetting::find(1)])->layout('components.layouts.app');
+        return view('livewire.server-setup', [
+            'dnsConfiguration' => DnsSetting::find(1),
+            'panelUpdateWebhookUrl' => route('webhooks.panel-update'),
+            'panelUpdateWebhookConfigured' => filled(config('minipanel.panel_update_webhook_secret')),
+            'panelUpdateBranch' => (string) config('minipanel.panel_update_branch'),
+        ])->layout('components.layouts.app');
     }
 }

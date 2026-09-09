@@ -58,7 +58,20 @@
     </section>
     @endif
     @if($serverSection === 'maintenance')
-    <section class="panel" id="maintenance"><div class="section-title"><div><h2>Actualizar Freyja</h2><p class="muted">Descarga la rama actual del panel, reinstala dependencias, ejecuta migraciones y recompila la interfaz. Los sitios hospedados no se modifican.</p></div><button class="secondary" wire:click="prepareServerAction('panel-update')">Actualizar desde Git</button></div></section>
+    <section class="panel" id="maintenance">
+        <div class="section-title"><div><h2>Actualizar Freyja</h2><p class="muted">Descarga la rama actual del panel, reinstala dependencias, ejecuta migraciones y recompila la interfaz. Los sitios hospedados no se modifican.</p></div><div class="button-row"><button class="ghost" wire:click="refreshPanelUpdateStatus" wire:loading.attr="disabled" wire:target="refreshPanelUpdateStatus">Actualizar estado</button><button class="secondary" wire:click="prepareServerAction('panel-update')">Actualizar desde Git</button></div></div>
+        <dl class="mt-5 grid gap-3 sm:grid-cols-3">
+            <div><dt class="muted">Versión instalada</dt><dd class="mt-1 font-mono">{{ $panelUpdateStatus['Commit'] ?? '—' }}</dd></div>
+            <div><dt class="muted">Rama instalada</dt><dd class="mt-1 font-mono">{{ $panelUpdateStatus['Rama'] ?? '—' }}</dd></div>
+            <div><dt class="muted">Fecha del commit</dt><dd class="mt-1">{{ $panelUpdateStatus['Fecha'] ?? '—' }}</dd></div>
+        </dl>
+        @error('panelUpdate')<p class="error mt-4">{{ $message }}</p>@enderror
+        <div class="mt-5 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2"><div><h3>Webhook de actualización</h3><p class="muted">GitHub debe enviar <code>push</code> a esta ruta para la rama <code>{{ $panelUpdateBranch }}</code>.</p></div><span class="security-state">{{ $panelUpdateWebhookConfigured ? 'Secreto listo' : 'Falta secreto' }}</span></div>
+            <code class="mt-3 block break-all text-sm text-sky-300">{{ $panelUpdateWebhookUrl }}</code>
+            @if(! $panelUpdateWebhookConfigured)<p class="error mt-3">Define <code>PANEL_UPDATE_WEBHOOK_SECRET</code> en el <code>.env</code> antes de registrarlo en GitHub.</p>@endif
+        </div>
+    </section>
     <section class="panel danger-zone"><div class="section-title"><div><h2>Reiniciar VPS</h2><p class="muted">Corta brevemente todos los sitios, conexiones y colas. Freyja volverá al terminar el arranque.</p></div><button class="danger-button" wire:click="prepareServerAction('reboot')">Reiniciar VPS</button></div></section>
     @endif
     @if($serverOutput)<section class="panel"><h2>Resultado</h2><pre class="laravel-console">{{ $serverOutput }}</pre></section>@endif

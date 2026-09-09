@@ -326,6 +326,17 @@ EOF
   echo 'Actualización de Freyja iniciada en segundo plano. El panel se recargará al terminar.'
   exit 0
 fi
+if [[ "$action" == 'server-panel-update-status' ]]; then
+  (( $# == 1 )) || fail 'This action does not accept arguments'
+  storage_path="$(cat /etc/minipanel/panel-storage-path)"
+  app_path="${storage_path%/storage/app/private}"
+  [[ "$app_path" == /var/www/* && -d "$app_path/.git" ]] || fail 'Panel Git checkout is unavailable'
+  branch="$(git -c safe.directory="$app_path" -C "$app_path" symbolic-ref --short HEAD 2>/dev/null || printf 'detached')"
+  commit="$(git -c safe.directory="$app_path" -C "$app_path" rev-parse --short HEAD)"
+  committed_at="$(git -c safe.directory="$app_path" -C "$app_path" log -1 --format=%cI)"
+  printf 'Rama\t%s\nCommit\t%s\nFecha\t%s\n' "$branch" "$commit" "$committed_at"
+  exit 0
+fi
 if [[ "$action" == 'server-hostname' ]]; then
   (( $# == 2 )) || fail 'Hostname is required'
   hostname="$2"
