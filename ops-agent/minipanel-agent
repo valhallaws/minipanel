@@ -321,7 +321,7 @@ EOF
   chown root:root "$update_script"
   chmod 0750 "$update_script"
   : > /var/log/minipanel/panel-update.log
-  systemd-run --unit=minipanel-panel-update --collect --property=Type=exec --property=StandardOutput=append:/var/log/minipanel/panel-update.log --property=StandardError=append:/var/log/minipanel/panel-update.log "$update_script"
+  systemd-run --unit=minipanel-panel-update --collect --property=Type=exec --property=User=root --property=StandardOutput=append:/var/log/minipanel/panel-update.log --property=StandardError=append:/var/log/minipanel/panel-update.log /bin/bash "$update_script"
   echo 'Actualización de Freyja iniciada en segundo plano. El panel se recargará al terminar.'
   exit 0
 fi
