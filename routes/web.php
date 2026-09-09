@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DatabaseDumpDownloadController;
 use App\Http\Controllers\DatabaseUploadController;
+use App\Http\Controllers\PanelUpdateWebhookController;
 use App\Http\Controllers\RepositoryWebhookController;
 use App\Http\Controllers\SiteFileDownloadController;
 use App\Http\Controllers\SiteSnapshotController;
@@ -60,5 +61,6 @@ Route::middleware('guest')->group(function () {
 
 Route::get('/server-terminal/auth', TerminalAuthorizationController::class)->name('server.terminal.auth');
 
-Route::post('/webhooks/{site:webhook_token}', WebhookController::class)->middleware('throttle:60,1')->name('webhooks.deploy');
+Route::post('/webhooks/panel-update', PanelUpdateWebhookController::class)->middleware('throttle:10,1')->name('webhooks.panel-update');
 Route::post('/webhooks/repositories/{repository:key_token}', RepositoryWebhookController::class)->middleware('throttle:30,1')->name('webhooks.repository');
+Route::post('/webhooks/{site:webhook_token}', WebhookController::class)->middleware('throttle:60,1')->name('webhooks.deploy');

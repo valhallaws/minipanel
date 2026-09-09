@@ -294,6 +294,8 @@ source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 grep -qE '^APP_ENV=production$' "$app_path/.env" || { echo 'APP_ENV must be production.' >&2; exit 66; }
 grep -qE '^APP_KEY=base64:[A-Za-z0-9+/]{43}=$' "$app_path/.env" || { echo 'Generate a valid APP_KEY before installing.' >&2; exit 66; }
 grep -qE '^PASSKEYS_USER_HANDLE_SECRET=.{32,}$' "$app_path/.env" || { echo 'Set a permanent PASSKEYS_USER_HANDLE_SECRET of at least 32 characters before installing.' >&2; exit 66; }
+grep -qE '^PANEL_UPDATE_WEBHOOK_SECRET=.{32,}$' "$app_path/.env" || { echo 'Set a permanent PANEL_UPDATE_WEBHOOK_SECRET of at least 32 characters before installing.' >&2; exit 66; }
+grep -qE '^PANEL_UPDATE_BRANCH=[A-Za-z0-9._/-]+$' "$app_path/.env" || { echo 'Set a valid PANEL_UPDATE_BRANCH before installing.' >&2; exit 66; }
 grep -qE '^MINIPANEL_EXECUTION_ENABLED=false$' "$app_path/.env" || { echo 'Keep MINIPANEL_EXECUTION_ENABLED=false during installation.' >&2; exit 66; }
 
 bootstrap_packages=(curl ca-certificates gnupg software-properties-common snapd)
@@ -433,3 +435,4 @@ echo 'Bootstrap complete. Next: set MINIPANEL_EXECUTION_ENABLED=true only after 
 echo "  sudo -u $app_user php $app_path/artisan optimize"
 echo "  sudo -u $app_user php $app_path/artisan minipanel:doctor"
 echo "MiniPanel is available only at: https://$panel_ip:$panel_port"
+echo "Panel update webhook: https://$panel_ip:$panel_port/webhooks/panel-update (GitHub push, branch from PANEL_UPDATE_BRANCH)"
