@@ -30,9 +30,18 @@ class SslManager extends Component
     public function issueCertificate(): void
     {
         abort_unless(Auth::check(), 403);
-        abort_unless($this->site->fresh()?->status === 'active', 422, 'El dominio debe estar activo.');
+        $this->resetErrorBag();
+        if ($this->site->fresh()?->status !== 'active') {
+            $this->addError('certificate', 'El dominio aún se está aprovisionando. Espera a que quede activo antes de solicitar el certificado.');
+
+            return;
+        }
         $this->validate(['acceptCertificateTerms' => ['accepted']]);
-        abort_if($this->site->deployments()->where('action', 'issue-ssl')->whereIn('status', ['queued', 'running'])->exists(), 422, 'Ya hay una operación SSL en curso.');
+        if ($this->site->deployments()->where('action', 'issue-ssl')->whereIn('status', ['queued', 'running'])->exists()) {
+            $this->addError('certificate', 'Ya hay una operación SSL en curso.');
+
+            return;
+        }
 
         $deployment = Deployment::create([
             'site_id' => $this->site->id,

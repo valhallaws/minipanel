@@ -281,6 +281,18 @@ class HostingTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_certificate_explains_when_the_domain_is_not_active(): void
+    {
+        $site = $this->site();
+        $site->update(['status' => 'provisioning']);
+
+        Livewire::actingAs(User::factory()->create())->test(SslManager::class, ['site' => $site])
+            ->set('acceptCertificateTerms', true)
+            ->call('issueCertificate')
+            ->assertHasErrors('certificate')
+            ->assertSee('aún se está aprovisionando');
+    }
+
     public function test_certificate_uses_authenticated_users_email(): void
     {
         Queue::fake([RunDeployment::class]);

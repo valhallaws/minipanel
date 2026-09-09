@@ -6,7 +6,10 @@ set -euo pipefail
 action="${1:-}"; site_root="${2:-}"; domain="${3:-}"; repository="${4:-}"
 branch="${5:-main}"; php_version="${6:-8.3}"; queue_enabled="${7:-0}"; scheduler_enabled="${8:-1}"; runtime="${9:-laravel}"; php_extensions="${10:-}"
 extra_arguments=("${@:11}")
-site_user="mp_${domain//./_}"
+legacy_site_user="mp_${domain//./_}"
+site_user="$legacy_site_user"
+site_user_directory='/etc/minipanel/site-users'
+site_user_file="$site_user_directory/$domain"
 nginx_file="/etc/nginx/sites-available/${domain}"
 service_file="/etc/systemd/system/minipanel-${domain}.service"
 timer_file="/etc/systemd/system/minipanel-${domain}.timer"
@@ -18,6 +21,14 @@ node_version_file="/etc/minipanel/node-versions/$domain"
 node_version='22'
 node_binary=''
 node_npm=''
+panel_php_version='8.3'
+panel_php_version_file='/etc/minipanel/panel-php-version'
+
+if [[ -r "$panel_php_version_file" ]]; then
+  panel_php_version="$(tr -d '[:space:]' < "$panel_php_version_file")"
+fi
+[[ "$panel_php_version" =~ ^8\.[0-9]{1,2}$ ]] || fail 'Invalid panel PHP version'
+panel_php_service="php${panel_php_version}-fpm"
 
 fail() { echo "$1" >&2; exit 64; }
 
@@ -54,6 +65,41 @@ save_node_version() {
   chown root:root "$node_version_file"
   chmod 0644 "$node_version_file"
 }
+
+ensure_site_certificate_renewal_timer() {
+  cat > /usr/local/sbin/minipanel-site-certificates-renew <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exec /usr/local/bin/certbot renew --quiet --deploy-hook '/usr/bin/systemctl reload nginx'
+EOF
+  chmod 0750 /usr/local/sbin/minipanel-site-certificates-renew
+  chown root:root /usr/local/sbin/minipanel-site-certificates-renew
+  cat > /etc/systemd/system/minipanel-site-certificates.service <<'EOF'
+[Unit]
+Description=Renew Freyja site certificates when required
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/minipanel-site-certificates-renew
+EOF
+  cat > /etc/systemd/system/minipanel-site-certificates.timer <<'EOF'
+[Unit]
+Description=Check Freyja site certificate renewals twice daily
+
+[Timer]
+OnCalendar=*-*-* 03,15:00:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=minipanel-site-certificates.service
+
+[Install]
+WantedBy=timers.target
+EOF
+  chmod 0644 /etc/systemd/system/minipanel-site-certificates.service /etc/systemd/system/minipanel-site-certificates.timer
+  systemctl daemon-reload
+  systemctl enable --now minipanel-site-certificates.timer
+  systemctl is-active --quiet minipanel-site-certificates.timer || fail 'Site certificate renewal timer is not active'
+}
 [[ $EUID -eq 0 ]] || fail 'Run through the authorized control-plane identity'
 if [[ -n "${SUDO_USER:-}" ]]; then
   panel_identity="$(cat /etc/minipanel/panel-user)"
@@ -73,7 +119,7 @@ if [[ "$action" == 'server-status' ]]; then
   printf 'Memoria disponible\t%s\n' "$(free -h | awk '/Mem:/ {print $7}')"
   printf 'Disco /\t%s\n' "$(df -h / | awk 'NR==2 {print $3 " usados de " $2 " (" $5 ")"}')"
   printf 'Inodos /\t%s\n' "$(df -i / | awk 'NR==2 {print $3 " usados de " $2 " (" $5 ")"}')"
-  for service in nginx php8.3-fpm mariadb redis-server minipanel-worker minipanel-root-terminal; do
+  for service in nginx "$panel_php_service" mariadb redis-server minipanel-worker minipanel-root-terminal; do
     printf 'Servicio:%s\t%s\n' "$service" "$(systemctl is-active "$service" 2>/dev/null || true)"
     printf 'ServicioPID:%s\t%s\n' "$service" "$(systemctl show "$service" --property=MainPID --value 2>/dev/null || true)"
     printf 'ServicioInicio:%s\t%s\n' "$service" "$(systemctl show "$service" --property=ActiveEnterTimestamp --value 2>/dev/null || true)"
@@ -260,14 +306,14 @@ if [[ "$action" == 'server-sync-clock' ]]; then
 fi
 if [[ "$action" == 'server-restart-service' ]]; then
   (( $# == 2 )) || fail 'Service is required'
-  case "$2" in nginx|php8.3-fpm|mariadb|redis-server|minipanel-worker|minipanel-root-terminal) ;; *) fail 'Service is not managed by MiniPanel' ;; esac
+  case "$2" in nginx|"$panel_php_service"|mariadb|redis-server|minipanel-worker|minipanel-root-terminal) ;; *) fail 'Service is not managed by MiniPanel' ;; esac
   systemctl restart "$2"
   printf '%s: %s\n' "$2" "$(systemctl is-active "$2")"
   exit 0
 fi
 if [[ "$action" == 'server-service-log' ]]; then
   (( $# == 2 )) || fail 'Service is required'
-  case "$2" in nginx|php8.3-fpm|mariadb|redis-server|minipanel-worker|minipanel-root-terminal) ;; *) fail 'Service is not managed by MiniPanel' ;; esac
+  case "$2" in nginx|"$panel_php_service"|mariadb|redis-server|minipanel-worker|minipanel-root-terminal) ;; *) fail 'Service is not managed by MiniPanel' ;; esac
   /usr/bin/journalctl --unit "$2" --lines 80 --no-pager --output short-iso
   exit 0
 fi
@@ -318,6 +364,15 @@ case "$action" in file-extract|laravel-service|repository|site-lifecycle|snapsho
 [[ -z "$repository" || "$repository" =~ ^https://[^[:space:]]+$ || "$repository" =~ ^git@[A-Za-z0-9.-]+:[A-Za-z0-9._/-]+\.git$ || "$repository" =~ ^ssh://[^[:space:]]+$ ]] || fail 'Invalid repository URL'
 (( ${#extra_arguments[@]} <= 20 )) || fail 'Too many arguments'
 for argument in "${extra_arguments[@]}"; do (( ${#argument} <= 512 )) || fail 'Argument too long'; done
+
+if [[ -f "$site_user_file" && ! -L "$site_user_file" ]]; then
+  site_user="$(tr -d '[:space:]' < "$site_user_file")"
+elif (( ${#legacy_site_user} <= 32 )); then
+  site_user="$legacy_site_user"
+else
+  site_user="mp_$(printf '%s' "$domain" | sha256sum | cut -c1-20)"
+fi
+[[ "$site_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || fail 'Invalid site system user'
 
 install -d -o root -g root -m 0700 /run/minipanel
 exec 7>"/run/minipanel/lifecycle-$domain.lock"
@@ -624,6 +679,12 @@ run_post_deploy_commands() {
 }
 
 provision_site() {
+  install -d -m 0755 -o root -g root "$site_user_directory"
+  if [[ ! -e "$site_user_file" ]]; then
+    printf '%s\n' "$site_user" > "$site_user_file"
+    chown root:root "$site_user_file"
+    chmod 0644 "$site_user_file"
+  fi
   ensure_php_runtime "$php_version"
   ensure_php_extensions "$php_version"
   save_node_version "$node_version"
@@ -879,8 +940,7 @@ EOF
     fi
     certificate_email="${extra_arguments[1]:-}"
     [[ "$certificate_email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || fail 'A valid certificate contact email is required'
-    systemctl enable --now certbot.timer
-    systemctl is-active --quiet certbot.timer || fail 'Automatic renewal timer is not active'
+    ensure_site_certificate_renewal_timer
     certbot --nginx --non-interactive --agree-tos --email "$certificate_email" --redirect -d "$public_domain"
     echo 'MINIPANEL_RENEWAL_ENABLED'
     echo "SSL certificate issued for $domain"

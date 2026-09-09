@@ -291,19 +291,29 @@ class ServerSetup extends Component
 
     public function managedServices(): array
     {
-        return ['nginx', 'php8.3-fpm', 'mariadb', 'redis-server', 'minipanel-worker', 'minipanel-root-terminal'];
+        return ['nginx', $this->panelPhpFpmService(), 'mariadb', 'redis-server', 'minipanel-worker', 'minipanel-root-terminal'];
     }
 
     public function serviceLabel(string $service): string
     {
         return [
             'nginx' => 'Nginx',
-            'php8.3-fpm' => 'PHP-FPM 8.3',
+            $this->panelPhpFpmService() => 'PHP-FPM '.$this->panelPhpVersion(),
             'mariadb' => 'MariaDB',
             'redis-server' => 'Redis',
             'minipanel-worker' => 'Workers del panel',
             'minipanel-root-terminal' => 'Consola root',
         ][$service] ?? $service;
+    }
+
+    public function panelPhpVersion(): string
+    {
+        return PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;
+    }
+
+    public function panelPhpFpmService(): string
+    {
+        return 'php'.$this->panelPhpVersion().'-fpm';
     }
 
     public string $dnsDomain = '';

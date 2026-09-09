@@ -211,6 +211,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/$certificate_name/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     add_header Strict-Transport-Security "max-age=31536000" always;
+    include /etc/nginx/snippets/minipanel-root-terminal.conf;
     location / { try_files \$uri \$uri/ /index.php?\$query_string; }
     location ~ \.php\$ { include snippets/fastcgi-php.conf; fastcgi_pass unix:/run/php/minipanel-control.sock; }
     location ~ /\. { deny all; }
@@ -265,6 +266,24 @@ EOF
   rm -f "$renewal_script" "$service" "$timer"
 }
 
+remove_oracle_cloud_image_firewall_rejects() {
+  local rules_file='/etc/iptables/rules.v4' backup_file='/etc/iptables/rules.v4.before-freyja'
+  local input_reject='-A INPUT -j REJECT --reject-with icmp-host-prohibited'
+  local forward_reject='-A FORWARD -j REJECT --reject-with icmp-host-prohibited'
+
+  [[ -f "$rules_file" ]] || return 0
+  grep -Fxq -- "$input_reject" "$rules_file" || return 0
+
+  printf '+ remove Oracle cloud-image catch-all iptables rejects so UFW can filter ingress\n'
+  ((apply)) || return 0
+  if [[ ! -e "$backup_file" ]]; then
+    cp -p "$rules_file" "$backup_file"
+  fi
+  sed -i "\\|^${input_reject}$|d;\\|^${forward_reject}$|d" "$rules_file"
+  /usr/sbin/iptables -D INPUT -j REJECT --reject-with icmp-host-prohibited 2>/dev/null || true
+  /usr/sbin/iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited 2>/dev/null || true
+}
+
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -f "$app_path/artisan" ]] || { echo "Laravel MiniPanel was not found at $app_path." >&2; exit 66; }
 [[ -f "$app_path/composer.json" && -f "$app_path/package-lock.json" ]] || { echo "composer.json and package-lock.json are required." >&2; exit 66; }
@@ -275,7 +294,7 @@ grep -qE '^PASSKEYS_USER_HANDLE_SECRET=.{32,}$' "$app_path/.env" || { echo 'Set 
 grep -qE '^MINIPANEL_EXECUTION_ENABLED=false$' "$app_path/.env" || { echo 'Keep MINIPANEL_EXECUTION_ENABLED=false during installation.' >&2; exit 66; }
 
 bootstrap_packages=(curl ca-certificates gnupg software-properties-common snapd)
-packages=(nginx git unzip zip composer mariadb-client mariadb-server redis-server supervisor fail2ban ufw dnsutils nodejs "php${php_version}-cli" "php${php_version}-fpm" "php${php_version}-bcmath" "php${php_version}-curl" "php${php_version}-mbstring" "php${php_version}-mysql" "php${php_version}-xml" "php${php_version}-zip" "php${php_version}-gd" "php${php_version}-intl" "php${php_version}-redis")
+packages=(nginx git unzip zip composer mariadb-client mariadb-server redis-server supervisor fail2ban ufw dnsutils ttyd nodejs "php${php_version}-cli" "php${php_version}-fpm" "php${php_version}-bcmath" "php${php_version}-curl" "php${php_version}-mbstring" "php${php_version}-mysql" "php${php_version}-xml" "php${php_version}-zip" "php${php_version}-gd" "php${php_version}-intl" "php${php_version}-redis")
 echo "MiniPanel installer: $([[ $apply -eq 1 ]] && echo APPLY || echo DRY RUN)"
 echo "Panel: https://$panel_ip:$panel_port | User: $app_user | PHP: $php_version"
 run apt-get update
@@ -283,6 +302,7 @@ run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${bootstrap_packages[
 configure_php_source
 configure_node_source
 run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+run systemctl disable --now ttyd
 verify_node_version
 provision_panel_database
 if ! id "$app_user" >/dev/null 2>&1; then
@@ -293,10 +313,12 @@ if ((apply)); then
   [[ "$(id -gn "$app_user")" == "$app_user" ]] || { echo 'Panel user must have a private primary group.' >&2; exit 77; }
 fi
 run install -d -m 0700 -o root -g root /etc/minipanel /etc/minipanel/deploy-keys /etc/minipanel/aliases
-run install -d -m 0750 -o root -g "$app_group" /var/lib/minipanel /var/lib/minipanel/downloads
+run install -d -m 0751 -o root -g "$app_group" /var/lib/minipanel
+run install -d -m 0750 -o root -g "$app_group" /var/lib/minipanel/downloads
 run install -d -m 0755 -o root -g root /var/lib/minipanel/acme
 write_root_value /etc/minipanel/panel-storage-path "$app_path/storage/app/private"
 write_root_value /etc/minipanel/panel-user "$app_user"
+write_root_value /etc/minipanel/panel-php-version "$php_version"
 write_root_value /etc/minipanel/file-transfer-max-bytes "$((file_transfer_max_mb * 1024 * 1024))"
 write_root_value /etc/minipanel/download-root /var/lib/minipanel/downloads
 run install -d -m 0750 -o "$app_user" -g "$app_group" \
@@ -315,6 +337,8 @@ run npm --prefix "$app_path" ci --no-audit --no-fund
 run npm --prefix "$app_path" run build
 run chown -R root:root "$app_path/vendor" "$app_path/node_modules" "$app_path/public/build"
 copy_file "$source_root/ops-agent/minipanel-agent" /usr/local/bin/minipanel-agent 0750
+copy_file "$source_root/ops-agent/minipanel-root-terminal.service" /etc/systemd/system/minipanel-root-terminal.service 0644
+copy_file "$source_root/ops-agent/minipanel-root-terminal.nginx.conf" /etc/nginx/snippets/minipanel-root-terminal.conf 0644
 copy_file "$source_root/ops-agent/minipanel-database.php" /usr/local/lib/minipanel-database.php 0640
 copy_file "$source_root/ops-agent/minipanel-database-operation.php" /usr/local/lib/minipanel-database-operation.php 0640
 copy_file "$source_root/ops-agent/minipanel-snapshot.cjs" /usr/local/lib/minipanel-snapshot.cjs 0644
@@ -377,15 +401,17 @@ EOF
 fi
 
 if ((with_firewall)); then
+  remove_oracle_cloud_image_firewall_rejects
   run ufw allow OpenSSH
   run ufw allow 'Nginx Full'
   run ufw allow "${panel_port}/tcp"
   run ufw --force enable
 fi
 
+run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" migrate --force --no-interaction
 run systemctl daemon-reload
-run systemctl enable mariadb nginx redis-server fail2ban minipanel-worker minipanel-scheduler.timer
-run systemctl restart mariadb "php${php_version}-fpm" nginx redis-server fail2ban minipanel-worker
+run systemctl enable mariadb nginx redis-server fail2ban minipanel-worker minipanel-root-terminal minipanel-scheduler.timer
+run systemctl restart mariadb "php${php_version}-fpm" nginx redis-server fail2ban minipanel-worker minipanel-root-terminal
 install_ip_certificate
 write_panel_https_vhost
 run nginx -t
@@ -393,12 +419,13 @@ run systemctl reload nginx
 write_ip_certificate_renewal_timer
 run systemctl daemon-reload
 run systemctl enable --now minipanel-ip-cert-renew.timer
-run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" migrate --force --no-interaction
 run env APP_ENV=production php "$app_path/artisan" storage:link
 run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" optimize
 run systemctl start minipanel-scheduler.timer
 run nginx -t
 
 echo
-echo 'Bootstrap complete. Next: set MINIPANEL_EXECUTION_ENABLED=true only after reviewing the agent, then run php artisan minipanel:doctor.'
+echo 'Bootstrap complete. Next: set MINIPANEL_EXECUTION_ENABLED=true only after reviewing the agent, then rebuild Laravel configuration and run the doctor:'
+echo "  sudo -u $app_user php $app_path/artisan optimize"
+echo "  sudo -u $app_user php $app_path/artisan minipanel:doctor"
 echo "MiniPanel is available only at: https://$panel_ip:$panel_port"

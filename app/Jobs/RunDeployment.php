@@ -128,9 +128,14 @@ class RunDeployment implements ShouldQueue
         if ($deployment->action === 'remove-queue' && $result->successful()) {
             SiteQueue::whereKey($parameters['site_queue_id'] ?? null)->delete();
         }
+        $storedOutput = $output ?: 'El agente no devolvió salida.';
+        if (! $result->successful() && mb_strlen($storedOutput) > 8000) {
+            $storedOutput = "… Se muestran los últimos 8,000 caracteres del error.\n".mb_substr($storedOutput, -8000);
+        }
+
         $deployment->update([
             'status' => $result->successful() ? 'finished' : 'failed',
-            'output' => (string) str($output ?: 'El agente no devolvió salida.')->limit(8000),
+            'output' => (string) str($storedOutput)->limit(8000),
             'finished_at' => now(),
         ]);
 

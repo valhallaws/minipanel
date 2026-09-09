@@ -75,6 +75,13 @@ class ServerTimezonesTest extends TestCase
         Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-restart-service', 'nginx']);
     }
 
+    public function test_panel_php_service_matches_the_php_version_running_the_panel(): void
+    {
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->call('selectServerSection', 'services')
+            ->assertSee('PHP-FPM '.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION);
+    }
+
     public function test_service_logs_use_only_an_allowlisted_read_only_agent_action(): void
     {
         Process::fake(fn () => Process::result('2026-09-08T10:00:00 nginx started'));

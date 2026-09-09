@@ -27,5 +27,6 @@
         <p class="muted">Usará {{ Auth::user()->email }} como correo de contacto. El DNS del dominio debe apuntar a este VPS y HTTP debe estar accesible.</p>
         <form wire:submit="issueCertificate" class="stack"><label class="check"><input type="checkbox" wire:model="acceptCertificateTerms"> Acepto los términos de Let's Encrypt.</label><div><button class="primary" wire:loading.attr="disabled">{{ $site->ssl_enabled ? 'Reemitir certificado' : 'Solicitar certificado' }}</button></div></form>
         @error('acceptCertificateTerms')<p class="error">{{ $message }}</p>@enderror
+        @error('certificate')<p class="error">{{ $message }}</p>@enderror
     </section>
 </div>
