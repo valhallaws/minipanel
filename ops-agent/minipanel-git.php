@@ -91,13 +91,17 @@ final class MiniPanelGit
             if (is_link($record)) {
                 throw new RuntimeException('Registro no válido.');
             }
+            $staleRecords = [];
             foreach (glob($this->private.'/*.json') ?: [] as $otherFile) {
                 if ($otherFile === $record) {
                     continue;
                 }
                 $other = json_decode(file_get_contents($otherFile), true, flags: JSON_THROW_ON_ERROR);
                 if (str_starts_with($target.'/', $other['path'].'/') || str_starts_with($other['path'].'/', $target.'/')) {
-                    throw new RuntimeException('El destino se cruza con otro repositorio.');
+                    if ($other['path'] !== $target || $other['url'] !== $url) {
+                        throw new RuntimeException('El destino se cruza con otro repositorio.');
+                    }
+                    $staleRecords[] = $otherFile;
                 }
             }
             $known = is_file($record) ? json_decode(file_get_contents($record), true, flags: JSON_THROW_ON_ERROR) : null;
@@ -108,6 +112,18 @@ final class MiniPanelGit
             $this->step('Validando clave y conexión');
             $this->git(['ls-remote', '--symref', $url, 'HEAD'], $this->root);
             $this->done();
+            if (file_exists($target)) {
+                if (is_link($target)) {
+                    throw new RuntimeException('No se modifica una carpeta destino enlazada.');
+                }
+                if (! is_dir($target.'/.git')) {
+                    $this->replaceTarget($target);
+                } elseif (is_link($target.'/.git')) {
+                    throw new RuntimeException('No se modifica un repositorio enlazado.');
+                } elseif (trim($this->git(['remote', 'get-url', 'origin'], $target)) !== $url) {
+                    $this->replaceTarget($target);
+                }
+            }
             $initialClone = ($data['initial'] ?? false) === true;
             $maintenanceStarted = false;
             if (! $initialClone && is_dir($target.'/.git') && is_file($target.'/vendor/autoload.php') && $this->isLaravelProject($target) && ! is_file($target.'/storage/framework/down')) {
@@ -117,20 +133,15 @@ final class MiniPanelGit
                 $maintenanceStarted = true;
             }
             if (! is_dir($target.'/.git')) {
-                if (is_dir($target) && count(scandir($target)) > 2) {
-                    throw new RuntimeException('La carpeta destino no está vacía. No se sobrescribió ningún archivo.');
-                }
                 $this->step('Obteniendo archivos');
                 $this->git(['clone', '--progress', '--', $url, $target], $this->root);
                 file_put_contents($record, json_encode(['path' => $target, 'url' => $url], JSON_THROW_ON_ERROR), LOCK_EX);
                 chmod($record, 0600);
                 $this->done();
             } else {
-                if (! $known || is_link($target.'/.git')) {
-                    throw new RuntimeException('Ya existe un repositorio no registrado en esa carpeta; no se modificó.');
-                }
-                if (trim($this->git(['remote', 'get-url', 'origin'], $target)) !== $url) {
-                    throw new RuntimeException('El remoto fue modificado fuera del panel.');
+                if (! $known) {
+                    file_put_contents($record, json_encode(['path' => $target, 'url' => $url], JSON_THROW_ON_ERROR), LOCK_EX);
+                    chmod($record, 0600);
                 }
                 $this->step('Obteniendo archivos');
                 $this->git(['fetch', '--progress', '--prune', 'origin'], $target);
@@ -145,6 +156,11 @@ final class MiniPanelGit
             $this->git(['checkout', '--force', '-B', $branch, 'refs/remotes/origin/'.$branch], $target);
             $this->git(['reset', '--hard', 'refs/remotes/origin/'.$branch], $target);
             $this->done('Los cambios rastreados locales fueron reemplazados por la rama remota. Los archivos no versionados, incluido .env, se conservaron.');
+            foreach ($staleRecords as $staleRecord) {
+                if (! unlink($staleRecord)) {
+                    throw new RuntimeException('No se pudo sustituir el registro anterior del repositorio.');
+                }
+            }
             $this->step('Detectando el proyecto');
             $composer = $this->jsonFile($target.'/composer.json');
             $package = $this->jsonFile($target.'/package.json');
@@ -407,6 +423,37 @@ final class MiniPanelGit
         }
 
         return $path;
+    }
+
+    private function replaceTarget(string $target): void
+    {
+        if (! file_exists($target) || is_link($target)) {
+            throw new RuntimeException('La carpeta destino no se puede reemplazar.');
+        }
+        if (is_file($target)) {
+            if (! unlink($target)) {
+                throw new RuntimeException('No se pudo reemplazar el archivo destino.');
+            }
+
+            return;
+        }
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($iterator as $entry) {
+            $path = $entry->getPathname();
+            if ($entry->isLink() || $entry->isFile()) {
+                if (! unlink($path)) {
+                    throw new RuntimeException('No se pudo reemplazar el contenido del destino.');
+                }
+            } elseif ($entry->isDir() && ! rmdir($path)) {
+                throw new RuntimeException('No se pudo reemplazar el contenido del destino.');
+            }
+        }
+        if (! rmdir($target)) {
+            throw new RuntimeException('No se pudo reemplazar la carpeta destino.');
+        }
     }
 
     private function jsonFile(string $path): array

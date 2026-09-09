@@ -119,6 +119,28 @@ class GitManagerTest extends TestCase
         $this->assertSame('active', $site->fresh()->status);
     }
 
+    public function test_removed_repository_directory_can_be_registered_again(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Queue::fake([RunRepositorySync::class]);
+        Process::fake(fn () => Process::result('{"public_key":"ssh-ed25519 replacement"}'));
+        $site = $this->site();
+        $repository = SiteRepository::factory()->for($site)->create(['directory' => 'httpdocs', 'status' => 'failed']);
+
+        Livewire::actingAs(User::factory()->create())->test(GitManager::class, ['site' => $site])
+            ->call('removeRepository', $repository->id)
+            ->call('openCreate')
+            ->set('name', 'Replacement')
+            ->set('url', 'git@example.com:team/project.git')
+            ->set('directory', 'httpdocs')
+            ->call('createRepository')
+            ->assertHasNoErrors();
+
+        $replacement = $site->repositories()->sole();
+        $this->assertSame('httpdocs', $replacement->directory);
+        $this->assertSame('queued', $replacement->status);
+    }
+
     public function test_worker_records_actual_steps_and_metadata(): void
     {
         config()->set('minipanel.execution_enabled', true);
