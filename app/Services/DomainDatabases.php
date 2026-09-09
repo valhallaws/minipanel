@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Site;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Validation\ValidationException;
 
@@ -24,8 +25,6 @@ class DomainDatabases
             throw ValidationException::withMessages(['database' => 'La ejecución está desactivada en este equipo. No se modificó MariaDB.']);
         }
 
-        $site->databases()->update(['status' => 'pending']);
-        $site->databaseUsers()->update(['status' => 'pending']);
         $databases = $site->databases()->get();
         $payload = [
             'databases' => $databases->map(fn ($database) => ['name' => $database->name, 'collation' => $database->collation])->all(),
@@ -62,6 +61,12 @@ class DomainDatabases
             if (preg_match('/^Database administration failed \[([a-z-]+)\]\.$/', $reason, $matches) && isset($descriptions[$matches[1]])) {
                 $message .= ' Motivo: '.$descriptions[$matches[1]];
             }
+
+            Log::warning('MariaDB synchronization failed.', [
+                'site_id' => $site->id,
+                'domain' => $site->domain,
+                'reason' => $matches[1] ?? 'unknown',
+            ]);
 
             throw ValidationException::withMessages(['database' => $message]);
         }

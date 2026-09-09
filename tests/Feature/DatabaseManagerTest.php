@@ -318,6 +318,29 @@ class DatabaseManagerTest extends TestCase
         $this->assertSame('pending', SiteDatabase::query()->sole()->status);
     }
 
+    public function test_failed_database_creation_keeps_existing_resources_active(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result(errorOutput: 'Database administration failed [busy].', exitCode: 1));
+        $site = $this->site();
+        $existingDatabase = $site->databases()->create(['name' => 'existing', 'status' => 'active']);
+        $site->databaseUsers()->create([
+            'name' => 'existing_user',
+            'password' => 'LongUniquePassword123!',
+            'site_database_id' => $existingDatabase->id,
+            'status' => 'active',
+        ]);
+
+        Livewire::actingAs(User::factory()->create())->test(DatabaseManager::class, ['site' => $site])
+            ->set('databaseName', 'pending_database')
+            ->call('createDatabase')
+            ->assertHasErrors('database');
+
+        $this->assertDatabaseHas('site_databases', ['name' => 'existing', 'status' => 'active']);
+        $this->assertDatabaseHas('site_databases', ['name' => 'pending_database', 'status' => 'pending']);
+        $this->assertDatabaseHas('site_database_users', ['name' => 'existing_user', 'status' => 'active']);
+    }
+
     public function test_failed_agent_shows_a_safe_database_failure_reason(): void
     {
         config()->set('minipanel.execution_enabled', true);
