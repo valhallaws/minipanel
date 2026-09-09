@@ -299,7 +299,7 @@ grep -qE '^PANEL_UPDATE_BRANCH=[A-Za-z0-9._/-]+$' "$app_path/.env" || { echo 'Se
 grep -qE '^MINIPANEL_EXECUTION_ENABLED=false$' "$app_path/.env" || { echo 'Keep MINIPANEL_EXECUTION_ENABLED=false during installation.' >&2; exit 66; }
 
 bootstrap_packages=(curl ca-certificates gnupg software-properties-common snapd)
-packages=(nginx git unzip zip composer mariadb-client mariadb-server redis-server supervisor fail2ban ufw dnsutils ttyd nodejs "php${php_version}-cli" "php${php_version}-fpm" "php${php_version}-bcmath" "php${php_version}-curl" "php${php_version}-mbstring" "php${php_version}-mysql" "php${php_version}-xml" "php${php_version}-zip" "php${php_version}-gd" "php${php_version}-intl" "php${php_version}-redis")
+packages=(nginx git unzip zip composer mariadb-client mariadb-server redis-server supervisor fail2ban ufw dnsutils ttyd nodejs "php${php_version}-cli" "php${php_version}-fpm" "php${php_version}-bcmath" "php${php_version}-curl" "php${php_version}-mbstring" "php${php_version}-mysql" "php${php_version}-xml" "php${php_version}-zip" "php${php_version}-gd" "php${php_version}-intl" "php${php_version}-redis" "php${php_version}-soap")
 echo "MiniPanel installer: $([[ $apply -eq 1 ]] && echo APPLY || echo DRY RUN)"
 echo "Panel: https://$panel_ip:$panel_port | User: $app_user | PHP: $php_version"
 run apt-get update

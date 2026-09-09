@@ -590,6 +590,7 @@ ensure_php_runtime() {
     "php${version}-mbstring" \
     "php${version}-mysql" \
     "php${version}-redis" \
+    "php${version}-soap" \
     "php${version}-xml" \
     "php${version}-zip"
   systemctl enable --now "php${version}-fpm"
