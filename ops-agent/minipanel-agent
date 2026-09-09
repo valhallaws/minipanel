@@ -901,11 +901,7 @@ EOF
     fi
     ;;
   database-sync)
-    panel_storage_path="$(cat /etc/minipanel/panel-storage-path)"
-    panel_path="${panel_storage_path%/storage/app/private}"
-    database_helper="$panel_path/ops-agent/minipanel-database.php"
-    [[ "$panel_path" == /var/www/* && -f "$database_helper" && ! -L "$database_helper" ]] || fail 'Database helper is unavailable'
-    install -o root -g root -m 0640 "$database_helper" /usr/local/lib/minipanel-database.php
+    [[ -f /usr/local/lib/minipanel-database.php && ! -L /usr/local/lib/minipanel-database.php ]] || fail 'Database helper is unavailable'
     /usr/bin/php /usr/local/lib/minipanel-database.php "$domain"
     ;;
   provision)

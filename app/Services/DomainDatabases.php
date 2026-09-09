@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Site;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class DomainDatabases
@@ -70,6 +71,7 @@ class DomainDatabases
                 'domain' => $site->domain,
                 'exit_code' => $result->exitCode(),
                 'reason' => $matches[1] ?? 'unknown',
+                'agent_stderr' => Str::limit($reason, 500),
             ]);
 
             throw ValidationException::withMessages(['database' => $message]);
