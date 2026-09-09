@@ -132,6 +132,23 @@ class GitManager extends Component
         $this->progressId = $id;
     }
 
+    public function removeRepository(int $id): void
+    {
+        abort_unless(Auth::check(), 403);
+
+        DB::transaction(function () use ($id): void {
+            $site = Site::whereKey($this->site->id)->lockForUpdate()->firstOrFail();
+            $repository = $site->repositories()->findOrFail($id);
+            $repository->delete();
+        });
+
+        if ($this->progressId === $id) {
+            $this->progressId = null;
+        }
+
+        session()->flash('notice', 'Repositorio quitado del panel. Sus archivos no se modificaron.');
+    }
+
     public function showProgress(int $id): void
     {
         abort_unless(Auth::check(), 403);

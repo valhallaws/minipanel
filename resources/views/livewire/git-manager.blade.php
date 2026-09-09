@@ -4,7 +4,7 @@
     @endunless
     <div class="section-title"><div><h1>Repositorios Git · {{ $site->domain }}</h1><p>SSH · Destinos independientes · Raíz web: {{ $site->document_root ?? '.' }}</p></div><button class="primary" wire:click="openCreate" wire:loading.attr="disabled">Añadir repositorio</button></div>
     @if($errors->any())<div class="error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
-    <span wire:loading wire:target="openCreate,browse,createFolder,createRepository,syncRepository">Procesando…</span>
+    <span wire:loading wire:target="openCreate,browse,createFolder,createRepository,syncRepository,removeRepository">Procesando…</span>
     <section class="panel"><div class="section-title"><div><h2>Script post-deploy</h2><p>Un comando por línea. En Laravel, Freyja activa mantenimiento antes del pull, instala Composer y Node cuando la preparación está habilitada, ejecuta este script y solo entonces vuelve a levantar la aplicación. Si algo falla, se conserva el mantenimiento.</p></div><button class="primary" wire:click="saveSiteDeployCommands">Guardar script</button></div><textarea wire:model="siteDeployCommands" class="env-editor" rows="8" spellcheck="false" placeholder="composer install --no-interaction --no-dev&#10;npm ci&#10;npm run build&#10;php artisan migrate --force&#10;php artisan optimize:clear&#10;php artisan optimize"></textarea>@error('siteDeployCommands')<p class="error">{{ $message }}</p>@enderror</section>
     @if($site->repository)<div class="notice">Este dominio tiene una configuración Git anterior. No se ha movido ni adoptado ese repositorio automáticamente. Sus archivos se conservan.</div>@endif
     <div class="git-grid">
@@ -29,7 +29,7 @@
                 @if($repository->project_type === 'Laravel')<p>Laravel detectado. Para servirlo configura <code>{{ $repository->directory }}/public</code> en <a href="{{ route('sites.show', $site) }}">Hosting</a>. La raíz web no cambia automáticamente.</p>@endif
             </details>
             @if($repository->error)<p class="error" role="alert">{{ $repository->error }}</p>@endif
-            <footer><button class="primary" wire:click="syncRepository({{ $repository->id }})" wire:loading.attr="disabled" @disabled(in_array($repository->status, ['queued', 'running']))>{{ $repository->status === 'failed' ? 'Reintentar' : 'Pull ahora' }}</button><button class="secondary" wire:click="showProgress({{ $repository->id }})">Ver progreso</button><small>{{ $repository->synced_at?->format('d/m/Y H:i') }}</small></footer>
+            <footer><button class="primary" wire:click="syncRepository({{ $repository->id }})" wire:loading.attr="disabled" @disabled(in_array($repository->status, ['queued', 'running']))>{{ $repository->status === 'failed' ? 'Reintentar' : 'Pull ahora' }}</button><button class="secondary" wire:click="showProgress({{ $repository->id }})">Ver progreso</button><button class="ghost" wire:click="removeRepository({{ $repository->id }})" wire:confirm="¿Quitar este repositorio del panel? No se eliminarán sus archivos del sitio.">Quitar</button><small>{{ $repository->synced_at?->format('d/m/Y H:i') }}</small></footer>
         </article>
         @endforeach
         <button class="git-add" wire:click="openCreate" wire:loading.attr="disabled"><x-ui-icon name="git" /><span>＋ Añadir repositorio</span><small>Clonar por SSH en una carpeta de este dominio</small></button>

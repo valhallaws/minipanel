@@ -106,6 +106,19 @@ class GitManagerTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_repository_can_be_removed_without_touching_the_site(): void
+    {
+        $site = $this->site();
+        $repository = SiteRepository::factory()->for($site)->create(['status' => 'failed']);
+
+        Livewire::actingAs(User::factory()->create())->test(GitManager::class, ['site' => $site])
+            ->call('removeRepository', $repository->id)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseMissing('site_repositories', ['id' => $repository->id]);
+        $this->assertSame('active', $site->fresh()->status);
+    }
+
     public function test_worker_records_actual_steps_and_metadata(): void
     {
         config()->set('minipanel.execution_enabled', true);
