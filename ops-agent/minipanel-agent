@@ -543,17 +543,22 @@ safe_site_path() {
 }
 
 configure_site_pool() {
-  local version="$1" memory_limit="${2:-256M}" execution_timeout="${3:-120}" upload_limit="${4:-2g}" pool_file="/etc/php/$1/fpm/pool.d/minipanel-$domain.conf"
+  local version="$1" memory_limit="${2:-256M}" execution_timeout="${3:-120}" upload_limit="${4:-2g}" pool_file="/etc/php/$1/fpm/pool.d/minipanel-$domain.conf" site_group runtime_directory cache_directory config_directory
   [[ -d "/etc/php/$version/fpm/pool.d" ]] || fail 'PHP-FPM is not installed'
   [[ ! -L "$pool_file" ]] || fail 'Unexpected pool link'
   id "$site_user" >/dev/null || fail 'Unknown site user'
+  site_group="$(id -gn "$site_user")"
   if id -nG "$site_user" | tr ' ' '\n' | grep -qx www-data; then
     gpasswd -d "$site_user" www-data
   fi
+  runtime_directory="$site_root/.runtime"
+  cache_directory="$site_root/.cache"
+  config_directory="$site_root/.config"
+  install -d -m 0700 -o "$site_user" -g "$site_group" "$runtime_directory" "$cache_directory" "$config_directory"
   cat > "$pool_file" <<EOF
 [minipanel-$domain]
 user = $site_user
-group = $(id -gn "$site_user")
+group = $site_group
 listen = /run/php/minipanel-$domain-$version.sock
 listen.owner = www-data
 listen.group = www-data
@@ -562,6 +567,10 @@ pm = ondemand
 pm.max_children = 5
 pm.process_idle_timeout = 10s
 clear_env = yes
+env[HOME] = $site_root
+env[XDG_CACHE_HOME] = $cache_directory
+env[XDG_CONFIG_HOME] = $config_directory
+env[XDG_RUNTIME_DIR] = $runtime_directory
 security.limit_extensions = .php
 php_admin_value[memory_limit] = $memory_limit
 php_admin_value[max_execution_time] = $execution_timeout
