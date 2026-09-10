@@ -4,7 +4,7 @@ if (!/^[a-z0-9.-]+$/.test(domain || '') || !['http', 'https'].includes(scheme)) 
 
 (async () => {
     const browser = await chromium.launch({
-        chromiumSandbox: true,
+        chromiumSandbox: false,
         args: [`--host-resolver-rules=MAP ${domain} 127.0.0.1, EXCLUDE localhost`, '--no-proxy-server'],
     });
     try {

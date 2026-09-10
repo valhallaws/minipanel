@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Livewire\ServerSetup;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -18,6 +19,20 @@ class ServerTimezonesTest extends TestCase
         Process::fake();
         $this->actingAs(User::factory()->create())->get(route('server.setup'))->assertOk()->assertSee('CENTRO DE CONTROL DEL VPS')->assertSee('Aplicaciones y bases');
         Process::assertNothingRan();
+    }
+
+    public function test_topbar_displays_the_installed_short_commit(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Cache::forget('panel-commit-short');
+        Process::fake(fn () => Process::result("Rama\tmain\nCommit\t3608478\nFecha\t2026-09-09T12:00:00+00:00\n"));
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('3608478');
+
+        Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-update-status']);
     }
 
     public function test_installer_instructions_use_ip_tls_and_a_dedicated_port(): void

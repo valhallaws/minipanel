@@ -403,7 +403,7 @@ final class MiniPanelSiteLifecycle
         if (posix_getpwnam($this->user)) {
             $this->run(['/usr/sbin/userdel', $this->user]);
         }
-        foreach (['/etc/minipanel/database-state/'.$this->domain.'.json', '/etc/minipanel/domain-names/'.$this->domain] as $file) {
+        foreach (['/etc/minipanel/database-state/'.$this->domain.'.json', '/etc/minipanel/domain-names/'.$this->domain, '/etc/minipanel/site-users/'.$this->domain] as $file) {
             if (is_file($file) && ! unlink($file)) {
                 throw new RuntimeException('Registry cleanup incomplete');
             }

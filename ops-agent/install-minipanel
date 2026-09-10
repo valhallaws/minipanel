@@ -156,6 +156,22 @@ verify_node_version() {
   node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 12) ? 0 : 1)' || { echo 'MiniPanel requires Node.js 22.12 or newer.' >&2; exit 69; }
 }
 
+provision_snapshot_runtime() {
+  local snapshot_root='/opt/minipanel-snapshots'
+
+  printf '+ provision isolated Playwright Chromium runtime for site snapshots\n'
+  ((apply)) || return 0
+  install -d -m 0755 -o root -g root "$snapshot_root"
+  if [[ ! -x "$snapshot_root/node_modules/.bin/playwright" ]]; then
+    npm --prefix "$snapshot_root" install --no-audit --no-fund --omit=dev playwright@1.55.0
+  fi
+  if ! find "$snapshot_root/browsers" -mindepth 1 -maxdepth 1 -type d -name 'chromium-*' -print -quit 2>/dev/null | grep -q .; then
+    PLAYWRIGHT_BROWSERS_PATH="$snapshot_root/browsers" "$snapshot_root/node_modules/.bin/playwright" install chromium
+  fi
+  chown -R root:root "$snapshot_root"
+  chmod -R a+rX "$snapshot_root"
+}
+
 write_panel_http_challenge_vhost() {
   local nginx_template acme_root='/var/lib/minipanel/acme' nginx_file='/etc/nginx/sites-available/minipanel-control'
 
@@ -314,6 +330,7 @@ fi
 run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
 run systemctl disable --now ttyd
 verify_node_version
+provision_snapshot_runtime
 provision_panel_database
 if ! id "$app_user" >/dev/null 2>&1; then
   run useradd --system --user-group --no-create-home --home-dir "$app_path" --shell /usr/sbin/nologin "$app_user"

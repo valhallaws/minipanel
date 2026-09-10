@@ -39,6 +39,7 @@
         <header class="app-topbar">
             <button class="sidebar-toggle ghost" @click="sidebarOpen = !sidebarOpen" :aria-expanded="sidebarOpen" aria-label="Mostrar navegación"><x-ui-icon name="menu" /></button>
             <span>Administración del servidor</span>
+            @if($panelCommit)<code class="app-version">{{ $panelCommit }}</code>@endif
             <span class="app-account">{{ auth()->user()->name }}</span>
             <label class="theme-choice"><span>Tema</span><select x-model="theme" aria-label="Tema"><option value="system">Sistema</option><option value="light">Claro</option><option value="dark">Oscuro</option></select></label>
             <form method="POST" action="{{ route('logout') }}">@csrf<button class="ghost">Salir</button></form>
