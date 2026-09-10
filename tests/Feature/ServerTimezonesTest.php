@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Livewire\ServerSetup;
+use App\Models\ServerSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -33,6 +34,25 @@ class ServerTimezonesTest extends TestCase
             ->assertSee('3608478');
 
         Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-update-status']);
+    }
+
+    public function test_installer_settings_command_persists_the_server_public_ip(): void
+    {
+        $this->artisan('minipanel:seed-installer-settings', [
+            '--panel-path' => '/var/www/freyja',
+            '--panel-user' => 'freyja-control',
+            '--panel-php-version' => '8.4',
+            '--public-ip' => '140.84.190.68',
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('server_settings', [
+            'id' => 1,
+            'panel_path' => '/var/www/freyja',
+            'panel_user' => 'freyja-control',
+            'panel_php_version' => '8.4',
+            'public_ip' => '140.84.190.68',
+        ]);
+        $this->assertSame('140.84.190.68', ServerSetting::query()->value('public_ip'));
     }
 
     public function test_installer_instructions_use_ip_tls_and_a_dedicated_port(): void

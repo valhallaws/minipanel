@@ -437,6 +437,7 @@ if ((with_firewall)); then
 fi
 
 run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" migrate --force --no-interaction
+run sudo -u "$app_user" env APP_ENV=production php "$app_path/artisan" minipanel:seed-installer-settings --panel-path="$app_path" --panel-user="$app_user" --panel-php-version="$php_version" --public-ip="$panel_ip" --no-interaction
 run systemctl daemon-reload
 run systemctl enable mariadb nginx redis-server fail2ban minipanel-worker minipanel-root-terminal minipanel-scheduler.timer
 run systemctl restart mariadb "php${php_version}-fpm" nginx redis-server fail2ban minipanel-worker minipanel-root-terminal
