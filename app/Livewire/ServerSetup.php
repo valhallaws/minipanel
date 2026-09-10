@@ -59,6 +59,12 @@ class ServerSetup extends Component
 
     public array $panelUpdateStatus = [];
 
+    public bool $panelEnvironmentEditorOpen = false;
+
+    public string $panelEnvironment = '';
+
+    public string $panelEnvironmentOutput = '';
+
     public function selectServerSection(string $section): void
     {
         abort_unless(Auth::check(), 403);
@@ -88,6 +94,50 @@ class ServerSetup extends Component
             })->all();
         } catch (\Throwable) {
             $this->addError('panelUpdate', 'No se pudo contactar al agente del VPS.');
+        }
+    }
+
+    public function openPanelEnvironmentEditor(): void
+    {
+        abort_unless(Auth::check(), 403);
+        $this->resetErrorBag('panelEnvironment');
+        $this->panelEnvironmentOutput = '';
+
+        try {
+            $result = Process::timeout(15)->run(['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-env-read']);
+            if (! $result->successful()) {
+                $this->addError('panelEnvironment', 'No se pudo leer el archivo .env de Freyja.');
+
+                return;
+            }
+
+            $this->panelEnvironment = $result->output();
+            $this->panelEnvironmentEditorOpen = true;
+        } catch (\Throwable) {
+            $this->addError('panelEnvironment', 'No se pudo contactar al agente del VPS.');
+        }
+    }
+
+    public function savePanelEnvironment(): void
+    {
+        abort_unless(Auth::check(), 403);
+        abort_unless($this->panelEnvironmentEditorOpen, 422);
+        $this->validate(['panelEnvironment' => ['required', 'string', 'max:262144']]);
+        $this->resetErrorBag('panelEnvironment');
+
+        try {
+            $result = Process::timeout(90)->input($this->panelEnvironment)->run(['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-env-write']);
+            $this->panelEnvironmentOutput = mb_substr(trim($result->output()."\n".$result->errorOutput()), 0, 8000);
+            if (! $result->successful()) {
+                $this->addError('panelEnvironment', 'No se pudo aplicar el .env. Se restauró la configuración anterior.');
+
+                return;
+            }
+
+            $this->panelEnvironmentEditorOpen = false;
+            session()->flash('panelEnvironmentNotice', 'Configuración de Freyja guardada. La caché se reconstruyó y los servicios del panel se recargaron.');
+        } catch (\Throwable) {
+            $this->addError('panelEnvironment', 'No se pudo confirmar el guardado del .env.');
         }
     }
 

@@ -374,6 +374,48 @@ if [[ "$action" == 'server-panel-update-status' ]]; then
   printf 'Rama\t%s\nCommit\t%s\nFecha\t%s\n' "$branch" "$commit" "$committed_at"
   exit 0
 fi
+if [[ "$action" == 'server-panel-env-read' ]]; then
+  (( $# == 1 )) || fail 'This action does not accept arguments'
+  storage_path="$(cat /etc/minipanel/panel-storage-path)"
+  app_path="${storage_path%/storage/app/private}"
+  [[ "$app_path" == /var/www/* && -d "$app_path" && -f "$app_path/.env" && ! -L "$app_path/.env" ]] || fail 'Panel environment file is unavailable'
+  cat "$app_path/.env"
+  exit 0
+fi
+if [[ "$action" == 'server-panel-env-write' ]]; then
+  (( $# == 1 )) || fail 'This action does not accept arguments'
+  storage_path="$(cat /etc/minipanel/panel-storage-path)"
+  app_path="${storage_path%/storage/app/private}"
+  panel_user="$(cat /etc/minipanel/panel-user)"
+  [[ "$app_path" == /var/www/* && -d "$app_path" && -f "$app_path/.env" && ! -L "$app_path/.env" ]] || fail 'Panel environment file is unavailable'
+  [[ "$panel_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || fail 'Panel runtime configuration is invalid'
+  exec 8>/run/lock/minipanel-panel-environment.lock
+  flock -n 8 || fail 'Panel environment update is already running'
+  umask 077
+  temporary_environment="$(mktemp "$app_path/.env.XXXXXXXX")"
+  backup_environment="$(mktemp /tmp/minipanel-panel-environment.XXXXXXXX)"
+  trap 'rm -f -- "$temporary_environment" "$backup_environment"' EXIT
+  cat > "$temporary_environment"
+  [[ -s "$temporary_environment" && "$(wc -c < "$temporary_environment")" -le 262144 ]] || fail 'Panel environment content is invalid'
+  if grep -nEv '^[[:space:]]*(#.*)?$|^[A-Za-z_][A-Za-z0-9_]*=.*$' "$temporary_environment" >&2; then
+    fail 'Panel environment contains an invalid line'
+  fi
+  cp -p "$app_path/.env" "$backup_environment"
+  chown root:"$panel_user" "$temporary_environment"
+  chmod 0640 "$temporary_environment"
+  mv -f "$temporary_environment" "$app_path/.env"
+  if ! runuser -u "$panel_user" -- env "HOME=$app_path" /usr/bin/php"$panel_php_version" "$app_path/artisan" optimize:clear || ! runuser -u "$panel_user" -- env "HOME=$app_path" /usr/bin/php"$panel_php_version" "$app_path/artisan" optimize; then
+    cp -p "$backup_environment" "$app_path/.env"
+    chown root:"$panel_user" "$app_path/.env"
+    chmod 0640 "$app_path/.env"
+    runuser -u "$panel_user" -- env "HOME=$app_path" /usr/bin/php"$panel_php_version" "$app_path/artisan" optimize:clear >/dev/null 2>&1 || true
+    runuser -u "$panel_user" -- env "HOME=$app_path" /usr/bin/php"$panel_php_version" "$app_path/artisan" optimize >/dev/null 2>&1 || true
+    fail 'Panel environment could not be cached; the previous file was restored'
+  fi
+  systemctl restart "$panel_php_service" minipanel-worker
+  echo 'Configuración de Freyja guardada. Cachés reconstruidas y servicios recargados.'
+  exit 0
+fi
 if [[ "$action" == 'server-hostname' ]]; then
   (( $# == 2 )) || fail 'Hostname is required'
   hostname="$2"

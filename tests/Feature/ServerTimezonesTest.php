@@ -131,6 +131,33 @@ class ServerTimezonesTest extends TestCase
         Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-update-status']);
     }
 
+    public function test_panel_environment_editor_reads_the_fixed_panel_environment_file(): void
+    {
+        Process::fake(fn () => Process::result("APP_ENV=production\nMINIPANEL_EXECUTION_ENABLED=false\n"));
+
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->call('openPanelEnvironmentEditor')
+            ->assertSet('panelEnvironmentEditorOpen', true)
+            ->assertSet('panelEnvironment', "APP_ENV=production\nMINIPANEL_EXECUTION_ENABLED=false\n");
+
+        Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-env-read']);
+    }
+
+    public function test_saving_the_panel_environment_uses_a_fixed_agent_action_and_passes_content_via_standard_input(): void
+    {
+        Process::fake(fn () => Process::result('Configuración de Freyja guardada. Cachés reconstruidas y servicios recargados.'));
+
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->set('panelEnvironmentEditorOpen', true)
+            ->set('panelEnvironment', "APP_ENV=production\nMINIPANEL_EXECUTION_ENABLED=true\n")
+            ->call('savePanelEnvironment')
+            ->assertHasNoErrors()
+            ->assertSet('panelEnvironmentEditorOpen', false);
+
+        Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-panel-env-write']
+            && $process->input === "APP_ENV=production\nMINIPANEL_EXECUTION_ENABLED=true\n");
+    }
+
     public function test_service_logs_use_only_an_allowlisted_read_only_agent_action(): void
     {
         Process::fake(fn () => Process::result('2026-09-08T10:00:00 nginx started'));

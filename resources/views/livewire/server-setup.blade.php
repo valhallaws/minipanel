@@ -71,6 +71,11 @@
             <code class="mt-3 block break-all text-sm text-sky-700 dark:text-sky-300">{{ $panelUpdateWebhookUrl }}</code>
             @if(! $panelUpdateWebhookConfigured)<p class="error mt-3">Define <code>PANEL_UPDATE_WEBHOOK_SECRET</code> en el <code>.env</code> antes de registrarlo en GitHub.</p>@endif
         </div>
+        <div class="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700">
+            <div class="flex flex-wrap items-center justify-between gap-3"><div><strong>Configuración de Freyja</strong><p class="muted">Edita el <code>.env</code> del panel. Al guardar se limpia y reconstruye la caché; PHP-FPM y los workers se recargan.</p></div><button class="secondary" wire:click="openPanelEnvironmentEditor" wire:loading.attr="disabled" wire:target="openPanelEnvironmentEditor">Editar .env</button></div>
+            @if(session('panelEnvironmentNotice'))<p class="notice mt-3" role="status">{{ session('panelEnvironmentNotice') }}</p>@endif
+            @error('panelEnvironment')<p class="error mt-3" role="alert">{{ $message }}</p>@enderror
+        </div>
     </section>
     <section class="panel danger-zone"><div class="section-title"><div><h2>Reiniciar VPS</h2><p class="muted">Corta brevemente todos los sitios, conexiones y colas. Freyja volverá al terminar el arranque.</p></div><button class="danger-button" wire:click="prepareServerAction('reboot')">Reiniciar VPS</button></div></section>
     @endif
@@ -116,6 +121,19 @@
             @if($serverAction === 'fail2ban-unban')<label>Confirmación<input wire:model="fail2banConfirmation" autocomplete="off"></label>@error('fail2banConfirmation')<p class="error">{{ $message }}</p>@enderror@endif
             @if(in_array($serverAction, ['ssh-key-add', 'ssh-key-delete'], true))<label>Confirmación<input wire:model="sshConfirmation" autocomplete="off"></label>@error('sshConfirmation')<p class="error">{{ $message }}</p>@enderror@endif
             <footer><button class="primary" wire:click="runServerAction" wire:loading.attr="disabled">Confirmar</button><button class="secondary" wire:click="$set('confirmServerAction', false)">Cancelar</button></footer>
+        </dialog>
+    @endif
+    @if($panelEnvironmentEditorOpen)
+        <dialog class="git-dialog" wire:ignore.self x-data x-init="$el.showModal()" @cancel.prevent="$wire.set('panelEnvironmentEditorOpen', false)" aria-label="Editar configuración de Freyja">
+            <h2>Editar .env de Freyja</h2>
+            <p>Este archivo contiene secretos del panel. Al guardar se validará el formato, se reconstruirá la caché y se reiniciarán PHP-FPM y los workers.</p>
+            <form wire:submit="savePanelEnvironment" class="stack">
+                <label>Configuración<textarea wire:model="panelEnvironment" rows="20" class="font-mono text-sm" spellcheck="false" autocapitalize="none" autocomplete="off"></textarea></label>
+                @error('panelEnvironment')<p class="error" role="alert">{{ $message }}</p>@enderror
+                @if($panelEnvironmentOutput)<pre class="laravel-console">{{ $panelEnvironmentOutput }}</pre>@endif
+                <footer><button class="primary" wire:loading.attr="disabled" wire:target="savePanelEnvironment">Guardar y recachear</button><button type="button" class="secondary" wire:click="$set('panelEnvironmentEditorOpen', false)" wire:loading.attr="disabled" wire:target="savePanelEnvironment">Cancelar</button></footer>
+                <p class="muted" wire:loading wire:target="savePanelEnvironment">Aplicando configuración y reconstruyendo cachés…</p>
+            </form>
         </dialog>
     @endif
     @if($serverSection === 'dns')
