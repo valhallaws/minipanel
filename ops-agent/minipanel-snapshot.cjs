@@ -11,7 +11,10 @@ if (!/^[a-z0-9.-]+$/.test(domain || '') || !['http', 'https'].includes(scheme)) 
         const context = await browser.newContext({viewport: {width: 1280, height: 800}, serviceWorkers: 'block', acceptDownloads: false});
         await context.route('**/*', route => {
             const url = new URL(route.request().url());
-            const allowed = url.hostname === domain && ['http:', 'https:'].includes(url.protocol) && !url.port && ['GET', 'HEAD'].includes(route.request().method());
+            const isReadRequest = ['GET', 'HEAD'].includes(route.request().method());
+            const isSiteResource = url.hostname === domain && ['http:', 'https:'].includes(url.protocol) && !url.port;
+            const isUnsplashImage = ['images.unsplash.com', 'plus.unsplash.com'].includes(url.hostname) && url.protocol === 'https:' && !url.port;
+            const allowed = isReadRequest && (isSiteResource || isUnsplashImage);
             return allowed ? route.continue() : route.abort();
         });
         await context.routeWebSocket(/.*/, socket => socket.close());
