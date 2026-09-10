@@ -145,7 +145,7 @@ class ServerTimezonesTest extends TestCase
 
     public function test_saving_the_panel_environment_uses_a_fixed_agent_action_and_passes_content_via_standard_input(): void
     {
-        Process::fake(fn () => Process::result('Configuración de Freyja guardada. Cachés reconstruidas y servicios recargados.'));
+        Process::fake(fn () => Process::result('Configuración de Freyja guardada. Cachés reconstruidas y workers recargados.'));
 
         Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
             ->set('panelEnvironmentEditorOpen', true)

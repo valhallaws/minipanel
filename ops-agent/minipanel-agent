@@ -321,7 +321,7 @@ git_home="$(getent passwd "$git_user" | cut -d: -f6)"
 [[ "$git_home" == /home/* && -d "$git_home" ]] || { echo 'Panel Git home is invalid' >&2; exit 64; }
 branch="$(runuser -u "$git_user" -- env "HOME=$git_home" git -C "$app_path" symbolic-ref --short HEAD)"
 [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo 'Panel branch is invalid' >&2; exit 64; }
-runuser -u "$git_user" -- env "HOME=$git_home" git -C "$app_path" fetch --prune origin "$branch"
+runuser -u "$git_user" -- env "HOME=$git_home" git -c safe.directory="$app_path" -C "$app_path" fetch --prune origin "$branch"
 git -c safe.directory="$app_path" -C "$app_path" reset --hard "origin/$branch"
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-database.php" /usr/local/lib/minipanel-database.php
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-database-operation.php" /usr/local/lib/minipanel-database-operation.php
@@ -412,8 +412,8 @@ if [[ "$action" == 'server-panel-env-write' ]]; then
     runuser -u "$panel_user" -- env "HOME=$app_path" /usr/bin/php"$panel_php_version" "$app_path/artisan" optimize >/dev/null 2>&1 || true
     fail 'Panel environment could not be cached; the previous file was restored'
   fi
-  systemctl restart "$panel_php_service" minipanel-worker
-  echo 'Configuración de Freyja guardada. Cachés reconstruidas y servicios recargados.'
+  systemctl restart minipanel-worker
+  echo 'Configuración de Freyja guardada. Cachés reconstruidas y workers recargados.'
   exit 0
 fi
 if [[ "$action" == 'server-hostname' ]]; then
