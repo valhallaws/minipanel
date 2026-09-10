@@ -21,7 +21,7 @@ if (!/^[a-z0-9.-]+$/.test(domain || '') || !['http', 'https'].includes(scheme)) 
         const page = await context.newPage();
         const response = await page.goto(`${scheme}://${domain}/`, {waitUntil: 'domcontentloaded', timeout: 25000});
         if (!response || response.status() >= 400) throw new Error('Site unavailable');
-        await page.waitForLoadState('load', {timeout: 10000});
+        await page.waitForLoadState('load', {timeout: 10000}).catch(() => undefined);
         await page.waitForLoadState('networkidle', {timeout: 5000}).catch(() => undefined);
         await page.evaluate(async () => { await document.fonts?.ready; });
         await page.waitForTimeout(500);
