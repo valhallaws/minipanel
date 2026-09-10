@@ -795,6 +795,12 @@ restore_laravel_site() {
   restore_site_services
 }
 
+resume_deployed_laravel_site() {
+  [[ -f "$site_root/artisan" ]] || fail 'Laravel Artisan is unavailable after deployment'
+  sudo -u "$site_user" "/usr/bin/php$php_version" "$site_root/artisan" up --no-interaction
+  restore_site_services
+}
+
 run_post_deploy_commands() {
   local line command
   local -a command_parts
@@ -987,12 +993,9 @@ EOF
     deploy_script="$(cat)"
     custom_deploy_script='0'
     if printf '%s\n' "$deploy_script" | grep -qEv '^[[:space:]]*(#|$)'; then custom_deploy_script='1'; fi
-    was_laravel='0'
     if [[ "$runtime" == 'laravel' && -f "$site_root/artisan" ]]; then
-      was_laravel='1'
       stop_site_services
       sudo -u "$site_user" "/usr/bin/php$php_version" "$site_root/artisan" down --retry=60 --no-interaction || true
-      trap restore_laravel_site EXIT
     fi
     if [[ ! -d "$site_root/.git" ]]; then
       git_as_site -C "$site_root" init
@@ -1019,10 +1022,7 @@ EOF
       fi
       chgrp -R www-data "$site_root/storage" "$site_root/bootstrap/cache"
       chmod -R g+rwX "$site_root/storage" "$site_root/bootstrap/cache"
-      if [[ "$was_laravel" == '1' ]]; then
-        restore_laravel_site
-        trap - EXIT
-      fi
+      resume_deployed_laravel_site
       create_services
     else
       npm_as_site ci
