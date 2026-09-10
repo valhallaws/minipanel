@@ -11,6 +11,7 @@
 @case('package')<path d="m12 3 9 5-9 5-9-5ZM3 8v9l9 5 9-5V8M12 13v9M7 5.8l9 5" />@break
 @case('terminal')<path d="M3 4h18v16H3Zm4 5 3 3-3 3m6 0h4" />@break
 @case('clock')<path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 7v5l3 2" />@break
+@case('sun')<circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41" />@break
 @case('queue')<path d="M4 4h16v4H4Zm0 6h16v4H4Zm0 6h16v4H4M7 6h.01M7 12h.01M7 18h.01" />@break
 @case('shield')<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Zm-4 9 3 3 5-6" />@break
 @case('settings')<path d="M4 7h16M4 17h16M8 4v6M16 14v6" />@break

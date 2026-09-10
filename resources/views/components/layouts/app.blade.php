@@ -41,7 +41,14 @@
             <span>Administración del servidor</span>
             @if($panelCommit)<code class="app-version">{{ $panelCommit }}</code>@endif
             <span class="app-account">{{ auth()->user()->name }}</span>
-            <label class="theme-choice"><span>Tema</span><select x-model="theme" aria-label="Tema"><option value="system">Sistema</option><option value="light">Claro</option><option value="dark">Oscuro</option></select></label>
+            <div class="theme-menu" x-data="{ open: false }" @keydown.escape.window="open = false">
+                <button type="button" class="theme-trigger ghost" @click="open = !open" :aria-expanded="open" aria-label="Cambiar tema"><x-ui-icon name="sun" /></button>
+                <div class="theme-options" x-show="open" x-cloak @click.outside="open = false">
+                    <button type="button" @click="theme = 'system'; open = false" :class="{ 'selected': theme === 'system' }">Sistema</button>
+                    <button type="button" @click="theme = 'light'; open = false" :class="{ 'selected': theme === 'light' }">Claro</button>
+                    <button type="button" @click="theme = 'dark'; open = false" :class="{ 'selected': theme === 'dark' }">Oscuro</button>
+                </div>
+            </div>
             <form method="POST" action="{{ route('logout') }}">@csrf<button class="ghost">Salir</button></form>
         </header>
         <main class="shell app-content">{{ $slot }}</main>
