@@ -165,6 +165,35 @@ class LaravelManagerTest extends TestCase
         Process::assertRan(fn ($process) => in_array('laravel-service', $process->command, true) && in_array('apps/erp', $process->command, true) && in_array('schedule', $process->command, true));
     }
 
+    public function test_scheduler_activation_updates_the_project_timer_status(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result('Scheduler habilitado cada minuto.'));
+        $repository = $this->repository();
+        $operation = Deployment::create(['site_id' => $repository->site_id, 'action' => 'laravel-command', 'parameters' => ['repository_id' => $repository->id, 'service' => 'schedule', 'enabled' => true], 'status' => 'queued']);
+
+        (new RunLaravelCommand($operation->id))->handle();
+
+        $site = $repository->site->fresh();
+        $this->assertTrue($site->scheduler_enabled);
+        $this->assertSame('active', $site->scheduler_status);
+    }
+
+    public function test_scheduler_status_inspection_updates_the_dashboard_with_the_real_timer_state(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result('{"scheduler":"inactive"}'));
+        $repository = $this->repository();
+        $repository->site->update(['scheduler_enabled' => true, 'scheduler_status' => 'active']);
+        $operation = Deployment::create(['site_id' => $repository->site_id, 'action' => 'laravel-command', 'parameters' => ['repository_id' => $repository->id, 'service' => 'status', 'enabled' => false], 'status' => 'queued']);
+
+        (new RunLaravelCommand($operation->id))->handle();
+
+        $site = $repository->site->fresh();
+        $this->assertFalse($site->scheduler_enabled);
+        $this->assertSame('inactive', $site->scheduler_status);
+    }
+
     public function test_schedule_list_renders_tasks_with_a_human_readable_cadence(): void
     {
         $repository = $this->repository();

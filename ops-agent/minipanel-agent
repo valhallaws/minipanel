@@ -904,7 +904,12 @@ case "$action" in
     [[ "$(id -u "$site_user")" != 0 && "$site_user" != "$(cat /etc/minipanel/panel-user)" ]] || fail 'Invalid site identity'
     prefix="minipanel-${domain}-queue-r${project_id}"
     if [[ "$kind" == status ]]; then
-      systemctl list-units --all --plain --no-pager "${prefix}-*.service" "${prefix}-*.timer"
+      scheduler_state="$(systemctl is-active "${prefix}-schedule-1.timer" 2>/dev/null || true)"
+      case "$scheduler_state" in
+        active|inactive|failed) ;;
+        *) scheduler_state='unknown' ;;
+      esac
+      printf '{"scheduler":"%s"}\n' "$scheduler_state"
       exit 0
     fi
     exec 8>"/run/lock/minipanel-laravel-${domain}.lock"
@@ -942,6 +947,7 @@ WantedBy=timers.target
 EOF
       systemctl daemon-reload
       systemctl enable --now "$base.timer"
+      systemctl is-active --quiet "$base.timer" || fail 'Scheduler timer did not start'
       echo 'Scheduler habilitado cada minuto.'
     else
       [[ "$name" != schedule ]] || fail 'The name schedule is reserved'

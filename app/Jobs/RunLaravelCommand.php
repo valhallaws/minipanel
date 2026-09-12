@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Deployment;
+use App\Models\Site;
 use App\Services\DomainGit;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -78,10 +79,48 @@ class RunLaravelCommand implements ShouldQueue
                     $output .= "\n".$result->errorOutput();
                 }
             }
+            $this->updateServiceState($site, $parameters, $result->successful(), $output);
             $operation->update(['status' => $result->successful() ? 'finished' : 'failed', 'output' => mb_substr(trim($output) ?: 'Operación completada.', -16000), 'finished_at' => now()]);
         } catch (Throwable $exception) {
             $this->failed($exception);
         }
+    }
+
+    /**
+     * Keep the dashboard aligned with the timer assigned to this Laravel project.
+     *
+     * @param  array<string, mixed>  $parameters
+     */
+    private function updateServiceState(Site $site, array $parameters, bool $successful, string $output): void
+    {
+        if (($parameters['service'] ?? null) !== 'schedule' && ($parameters['service'] ?? null) !== 'status') {
+            return;
+        }
+
+        if (! $successful) {
+            return;
+        }
+
+        if (($parameters['service'] ?? null) === 'schedule') {
+            $enabled = (bool) ($parameters['enabled'] ?? false);
+            $site->update([
+                'scheduler_enabled' => $enabled,
+                'scheduler_status' => $enabled ? 'active' : 'inactive',
+            ]);
+
+            return;
+        }
+
+        $services = json_decode(trim($output), true);
+        $status = is_array($services) ? ($services['scheduler'] ?? 'unknown') : 'unknown';
+        if (! in_array($status, ['active', 'inactive', 'failed', 'unknown'], true)) {
+            $status = 'unknown';
+        }
+
+        $site->update([
+            'scheduler_enabled' => $status === 'active',
+            'scheduler_status' => $status,
+        ]);
     }
 
     public function failed(?Throwable $exception): void

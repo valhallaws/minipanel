@@ -50,9 +50,10 @@
         @endforeach
     </section>
     <section class="panel" x-show="tab === 'schedule'" x-cloak>
+        @php($schedulerStatus = $site->scheduler_status ?: ($site->scheduler_enabled ? 'active' : 'inactive'))
         <div class="schedule-heading">
             <div><h2>Tareas programadas</h2><p class="muted">Laravel revisa las tareas cada minuto; aquí ves la última lectura de <code>schedule:list</code>.</p></div>
-            <span class="schedule-state {{ $site->scheduler_enabled ? 'is-active' : 'is-inactive' }}">{{ $site->scheduler_enabled ? 'Scheduler activo' : 'Scheduler detenido' }}</span>
+            <span class="schedule-state {{ $schedulerStatus === 'active' ? 'is-active' : 'is-inactive' }}">{{ match($schedulerStatus) { 'active' => 'Scheduler activo', 'failed' => 'Scheduler con error', 'unknown' => 'Scheduler sin verificar', default => 'Scheduler detenido' } }}</span>
         </div>
         <div class="button-row"><button class="secondary" wire:click="scheduleList">Actualizar tareas</button><button class="primary" wire:click="scheduler(true)">Activar scheduler</button><button class="secondary" wire:click="scheduler(false)">Detener scheduler</button><button class="ghost" wire:click="serviceStatus">Ver servicios</button></div>
         @if($scheduleInspection)
@@ -82,7 +83,9 @@
     </section>
     <section class="panel" x-show="['schedule', 'queues'].includes(tab)" x-cloak>
         @foreach($activity as $operation)
-            @php($isQueue = in_array($operation->parameters['service'] ?? '', ['queue', 'status']) || str_starts_with($operation->parameters['arguments'][0] ?? '', 'queue:'))
+            @php($isQueue = ($operation->parameters['service'] ?? '') === 'queue' || str_starts_with($operation->parameters['arguments'][0] ?? '', 'queue:'))
+            @php($isSchedule = in_array($operation->parameters['service'] ?? '', ['schedule', 'status'], true))
+            @if($isSchedule)<article x-show="tab === 'schedule'" wire:key="laravel-operation-{{ $operation->id }}"><small>{{ $operation->status }} · {{ $operation->created_at->format('d/m/Y H:i') }}</small><pre class="laravel-console">{{ $operation->output }}</pre></article>@endif
             @if($isQueue)<article x-show="tab === 'queues'" wire:key="laravel-operation-{{ $operation->id }}"><small>{{ $operation->status }} · {{ $operation->created_at->format('d/m/Y H:i') }}</small><pre class="laravel-console">{{ $operation->output }}</pre></article>@endif
         @endforeach
     </section>
