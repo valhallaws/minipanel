@@ -319,7 +319,7 @@ git_user="$(stat -c '%U' "$app_path/.git")"
 [[ "$git_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo 'Panel Git identity is invalid' >&2; exit 64; }
 git_home="$(getent passwd "$git_user" | cut -d: -f6)"
 [[ "$git_home" == /home/* && -d "$git_home" ]] || { echo 'Panel Git home is invalid' >&2; exit 64; }
-branch="$(runuser -u "$git_user" -- env "HOME=$git_home" git -C "$app_path" symbolic-ref --short HEAD)"
+branch="$(runuser -u "$git_user" -- env "HOME=$git_home" git -c safe.directory="$app_path" -C "$app_path" symbolic-ref --short HEAD)"
 [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo 'Panel branch is invalid' >&2; exit 64; }
 runuser -u "$git_user" -- env "HOME=$git_home" git -c safe.directory="$app_path" -C "$app_path" fetch --prune origin "$branch"
 git -c safe.directory="$app_path" -C "$app_path" reset --hard "origin/$branch"
