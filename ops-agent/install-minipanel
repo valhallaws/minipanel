@@ -151,6 +151,23 @@ configure_php_source() {
   fi
 }
 
+configure_ssh_keepalives() {
+  local configuration='/etc/ssh/sshd_config.d/99-freyja-keepalives.conf'
+
+  printf '+ configure SSH keepalives (60 seconds, 120 missed probes)\n'
+  ((apply)) || return 0
+  install -d -m 0755 -o root -g root /etc/ssh/sshd_config.d
+  cat > "$configuration" <<'EOF'
+# Keep idle SSH sessions alive through NATs and firewalls without changing their streams.
+ClientAliveInterval 60
+ClientAliveCountMax 120
+EOF
+  chown root:root "$configuration"
+  chmod 0644 "$configuration"
+  /usr/sbin/sshd -t
+  systemctl reload ssh
+}
+
 verify_node_version() {
   ((apply)) || return 0
   node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 12) ? 0 : 1)' || { echo 'MiniPanel requires Node.js 22.12 or newer.' >&2; exit 69; }
@@ -329,6 +346,7 @@ else
 fi
 run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
 run systemctl disable --now ttyd
+configure_ssh_keepalives
 verify_node_version
 provision_snapshot_runtime
 provision_panel_database
