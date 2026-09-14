@@ -176,7 +176,12 @@
             @error('globalDbaName')<p class="error" role="alert">{{ $message }}</p>@enderror
             @error('globalDbaPassword')<p class="error" role="alert">{{ $message }}</p>@enderror
         </form>
-        @if($globalDbaUsers->isNotEmpty())<p class="muted">DBA(s) configurados: @foreach($globalDbaUsers as $globalDbaUser)<code wire:key="global-dba-{{ $globalDbaUser->id }}">{{ $globalDbaUser->name }}</code>{{ !$loop->last ? ', ' : '' }}@endforeach · privilegios globales mediante localhost.</p>@endif
+        @if($globalDbaUsers->isNotEmpty())
+            <div class="stack"><p class="muted">DBA(s) configurados · privilegios globales mediante localhost:</p>@foreach($globalDbaUsers as $globalDbaUser)<div wire:key="global-dba-{{ $globalDbaUser->id }}"><code>{{ $globalDbaUser->name }}</code> · {{ $globalDbaUser->status === 'active' ? 'activo' : 'pendiente' }} <button type="button" class="ghost" wire:click="editGlobalDbaPassword({{ $globalDbaUser->id }})">Cambiar contraseña</button></div>@endforeach</div>
+        @endif
+        @if($editingGlobalDbaId)
+            <form wire:submit="rotateGlobalDbaPassword" class="form-grid"><label>Nueva contraseña DBA<input wire:model="globalDbaPassword" type="password" autocomplete="new-password"><small>Mínimo 12 caracteres. Se aplicará inmediatamente en MariaDB.</small></label><div class="form-actions"><button class="secondary" wire:loading.attr="disabled" wire:target="rotateGlobalDbaPassword">Actualizar contraseña</button><button type="button" class="ghost" wire:click="$set('editingGlobalDbaId', null)">Cancelar</button></div>@error('globalDbaPassword')<p class="error" role="alert">{{ $message }}</p>@enderror</form>
+        @endif
         <h3>Zonas horarias de MariaDB</h3>
         <p>Carga o actualiza las tablas de zonas horarias de MariaDB en este VPS desde /usr/share/zoneinfo. No cambia la zona horaria predeterminada ni los datos de tus aplicaciones.</p>
         <button class="secondary" wire:click="$set('confirmTimezones', true)">Cargar / actualizar zonas horarias</button>

@@ -475,6 +475,8 @@ class ServerSetup extends Component
 
     public string $globalDbaPassword = '';
 
+    public ?int $editingGlobalDbaId = null;
+
     public function createGlobalDba(): void
     {
         abort_unless(Auth::check(), 403);
@@ -494,6 +496,27 @@ class ServerSetup extends Component
         app(AuditLogger::class)->record('database.global-dba.created', $user);
         $this->reset('globalDbaName', 'globalDbaPassword');
         session()->flash('globalDbaNotice', 'DBA global creado. Úsalo en DataGrip mediante túnel SSH; MariaDB permanece privado.');
+    }
+
+    public function editGlobalDbaPassword(int $id): void
+    {
+        abort_unless(Auth::check(), 403);
+        ServerDatabaseUser::query()->findOrFail($id);
+        $this->editingGlobalDbaId = $id;
+        $this->globalDbaPassword = '';
+        $this->resetValidation();
+    }
+
+    public function rotateGlobalDbaPassword(): void
+    {
+        abort_unless(Auth::check() && $this->editingGlobalDbaId, 403);
+        $this->validate(['globalDbaPassword' => ['required', 'string', 'min:12', 'max:128']]);
+        $user = ServerDatabaseUser::query()->findOrFail($this->editingGlobalDbaId);
+        $user->update(['password' => $this->globalDbaPassword, 'status' => 'pending']);
+        app(ServerDatabases::class)->apply();
+        app(AuditLogger::class)->record('database.global-dba.password-rotated', $user);
+        $this->reset('editingGlobalDbaId', 'globalDbaPassword');
+        session()->flash('globalDbaNotice', 'Contraseña del DBA global actualizada. Usa la nueva contraseña en DataGrip.');
     }
 
     public function mount(): void

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Livewire\ServerSetup;
+use App\Models\ServerDatabaseUser;
 use App\Models\ServerSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -105,6 +106,25 @@ class ServerTimezonesTest extends TestCase
 
         $this->assertDatabaseCount('server_database_users', 0);
         Process::assertNothingRan();
+    }
+
+    public function test_global_dba_password_can_be_rotated_without_recreating_the_account(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result('Global DBA accounts applied.'));
+        $dba = ServerDatabaseUser::create(['name' => 'freyja_dba', 'password' => 'OriginalPassword123!', 'status' => 'active']);
+
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->call('selectServerSection', 'applications')
+            ->call('editGlobalDbaPassword', $dba->id)
+            ->set('globalDbaPassword', 'RotatedPassword123!')
+            ->call('rotateGlobalDbaPassword')
+            ->assertHasNoErrors()
+            ->assertSet('editingGlobalDbaId', null);
+
+        $this->assertSame('RotatedPassword123!', $dba->fresh()->password);
+        Process::assertRan(fn ($process) => $process->command[3] === 'server-database-dba-sync'
+            && json_decode($process->input, true) === ['users' => [['name' => 'freyja_dba', 'password' => 'RotatedPassword123!']]]);
     }
 
     public function test_disabled_execution_prevents_import(): void
