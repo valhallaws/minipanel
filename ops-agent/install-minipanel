@@ -386,6 +386,7 @@ copy_file "$source_root/ops-agent/minipanel-agent" /usr/local/bin/minipanel-agen
 copy_file "$source_root/ops-agent/minipanel-root-terminal.service" /etc/systemd/system/minipanel-root-terminal.service 0644
 copy_file "$source_root/ops-agent/minipanel-root-terminal.nginx.conf" /etc/nginx/snippets/minipanel-root-terminal.conf 0644
 copy_file "$source_root/ops-agent/minipanel-database.php" /usr/local/lib/minipanel-database.php 0640
+copy_file "$source_root/ops-agent/minipanel-site-placeholder.html" /usr/local/lib/minipanel-site-placeholder.html 0644
 copy_file "$source_root/ops-agent/minipanel-server-database.php" /usr/local/lib/minipanel-server-database.php 0640
 copy_file "$source_root/ops-agent/minipanel-database-operation.php" /usr/local/lib/minipanel-database-operation.php 0640
 copy_file "$source_root/ops-agent/minipanel-snapshot.cjs" /usr/local/lib/minipanel-snapshot.cjs 0644

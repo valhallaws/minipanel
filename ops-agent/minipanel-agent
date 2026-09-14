@@ -324,6 +324,7 @@ branch="$(runuser -u "$git_user" -- env "HOME=$git_home" git -c safe.directory="
 runuser -u "$git_user" -- env "HOME=$git_home" git -c safe.directory="$app_path" -C "$app_path" fetch --prune origin "$branch"
 git -c safe.directory="$app_path" -C "$app_path" reset --hard "origin/$branch"
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-database.php" /usr/local/lib/minipanel-database.php
+install -o root -g root -m 0644 "$app_path/ops-agent/minipanel-site-placeholder.html" /usr/local/lib/minipanel-site-placeholder.html
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-server-database.php" /usr/local/lib/minipanel-server-database.php
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-database-operation.php" /usr/local/lib/minipanel-database-operation.php
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-site-lifecycle.php" /usr/local/lib/minipanel-site-lifecycle.php
@@ -853,6 +854,11 @@ provision_site() {
   if [[ ! -f "$nginx_file" ]]; then
     [[ ! -L "$site_root/httpdocs" ]] || fail 'Unexpected document root link'
     install -d -o "$site_user" -g www-data -m 0750 "$site_root/httpdocs"
+    placeholder='/usr/local/lib/minipanel-site-placeholder.html'
+    [[ -f "$placeholder" && ! -L "$placeholder" ]] || fail 'Site placeholder is unavailable'
+    if [[ ! -e "$site_root/httpdocs/index.html" ]]; then
+      install -o "$site_user" -g www-data -m 0640 "$placeholder" "$site_root/httpdocs/index.html"
+    fi
   fi
 
   if [[ ! -f "$nginx_file" ]]; then
