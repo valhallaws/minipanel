@@ -76,8 +76,10 @@ try {
             continue;
         }
         $other = json_decode(file_get_contents($registry), true, flags: JSON_THROW_ON_ERROR);
-        $otherUsers = array_map(static fn (string $account): string => explode('@', $account, 2)[0], $other['accounts']);
-        if (array_intersect($databaseNames, $other['databases']) || array_intersect(array_column($data['users'], 'name'), $otherUsers)) {
+        $otherDatabases = is_array($other['databases'] ?? null) ? $other['databases'] : [];
+        $otherAccounts = is_array($other['accounts'] ?? null) ? $other['accounts'] : [];
+        $otherUsers = array_map(static fn (string $account): string => explode('@', $account, 2)[0], $otherAccounts);
+        if (array_intersect($databaseNames, $otherDatabases) || array_intersect(array_column($data['users'], 'name'), $otherUsers)) {
             throw new RuntimeException('Resources belong to another domain');
         }
     }
