@@ -165,6 +165,18 @@
     @if($serverSection === 'applications')
     <section class="panel" id="applications">
         <h2>Aplicaciones y bases de datos</h2>
+        <h3>DBA global</h3>
+        <p class="muted">Cuenta de administración para todas las bases del VPS. DataGrip debe conectarse mediante túnel SSH al VPS y usar <code>127.0.0.1:3306</code>; no abre MariaDB al internet ni depende de tu IP actual.</p>
+        @if(session('globalDbaNotice'))<p class="notice" role="status">{{ session('globalDbaNotice') }}</p>@endif
+        <form wire:submit="createGlobalDba" class="form-grid">
+            <label>Usuario DBA<input wire:model="globalDbaName" maxlength="32" autocomplete="off" placeholder="freyja_dba"></label>
+            <label>Contraseña<input wire:model="globalDbaPassword" type="password" autocomplete="new-password"><small>Mínimo 12 caracteres. El panel la guarda cifrada para poder rotarla después.</small></label>
+            <div class="form-actions"><button class="secondary" wire:loading.attr="disabled" wire:target="createGlobalDba">Crear DBA global</button></div>
+            @error('globalDba')<p class="error" role="alert">{{ $message }}</p>@enderror
+            @error('globalDbaName')<p class="error" role="alert">{{ $message }}</p>@enderror
+            @error('globalDbaPassword')<p class="error" role="alert">{{ $message }}</p>@enderror
+        </form>
+        @if($globalDbaUsers->isNotEmpty())<p class="muted">DBA(s) configurados: @foreach($globalDbaUsers as $globalDbaUser)<code wire:key="global-dba-{{ $globalDbaUser->id }}">{{ $globalDbaUser->name }}</code>{{ !$loop->last ? ', ' : '' }}@endforeach · privilegios globales mediante localhost.</p>@endif
         <h3>Zonas horarias de MariaDB</h3>
         <p>Carga o actualiza las tablas de zonas horarias de MariaDB en este VPS desde /usr/share/zoneinfo. No cambia la zona horaria predeterminada ni los datos de tus aplicaciones.</p>
         <button class="secondary" wire:click="$set('confirmTimezones', true)">Cargar / actualizar zonas horarias</button>

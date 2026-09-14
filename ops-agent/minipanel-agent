@@ -324,6 +324,7 @@ branch="$(runuser -u "$git_user" -- env "HOME=$git_home" git -c safe.directory="
 runuser -u "$git_user" -- env "HOME=$git_home" git -c safe.directory="$app_path" -C "$app_path" fetch --prune origin "$branch"
 git -c safe.directory="$app_path" -C "$app_path" reset --hard "origin/$branch"
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-database.php" /usr/local/lib/minipanel-database.php
+install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-server-database.php" /usr/local/lib/minipanel-server-database.php
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-database-operation.php" /usr/local/lib/minipanel-database-operation.php
 install -o root -g root -m 0640 "$app_path/ops-agent/minipanel-site-lifecycle.php" /usr/local/lib/minipanel-site-lifecycle.php
 install -o root -g root -m 0644 "$app_path/ops-agent/minipanel-git.php" /usr/local/lib/minipanel-git.php
@@ -361,6 +362,12 @@ EOF
   : > /var/log/minipanel/panel-update.log
   systemd-run --unit=minipanel-panel-update --collect --property=Type=exec --property=User=root --property=StandardOutput=append:/var/log/minipanel/panel-update.log --property=StandardError=append:/var/log/minipanel/panel-update.log /bin/bash "$update_script"
   echo 'Actualización de Freyja iniciada en segundo plano. El panel se recargará al terminar.'
+  exit 0
+fi
+if [[ "$action" == 'server-database-dba-sync' ]]; then
+  (( $# == 1 )) || fail 'This action does not accept arguments'
+  [[ -f /usr/local/lib/minipanel-server-database.php && ! -L /usr/local/lib/minipanel-server-database.php ]] || fail 'Global database helper is unavailable'
+  systemd-run --quiet --wait --pipe --collect --property=Type=exec --property=User=root /usr/bin/php /usr/local/lib/minipanel-server-database.php
   exit 0
 fi
 if [[ "$action" == 'server-panel-update-status' ]]; then

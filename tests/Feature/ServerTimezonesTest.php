@@ -73,6 +73,40 @@ class ServerTimezonesTest extends TestCase
         Process::assertNothingRan();
     }
 
+    public function test_global_dba_is_created_for_local_ssh_tunnel_access_to_every_database(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result('Global DBA accounts applied.'));
+
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->call('selectServerSection', 'applications')
+            ->set('globalDbaName', 'freyja_dba')
+            ->set('globalDbaPassword', 'LongPassword123!')
+            ->call('createGlobalDba')
+            ->assertHasNoErrors()
+            ->assertSee('freyja_dba')
+            ->assertSee('túnel SSH');
+
+        $this->assertDatabaseHas('server_database_users', ['name' => 'freyja_dba', 'status' => 'active']);
+        Process::assertRan(fn ($process) => $process->command[1] === '--non-interactive'
+            && $process->command[3] === 'server-database-dba-sync'
+            && json_decode($process->input, true) === ['users' => [['name' => 'freyja_dba', 'password' => 'LongPassword123!']]]);
+    }
+
+    public function test_global_dba_rejects_reserved_names_without_contacting_mariadb(): void
+    {
+        Process::fake();
+
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->set('globalDbaName', 'root')
+            ->set('globalDbaPassword', 'LongPassword123!')
+            ->call('createGlobalDba')
+            ->assertHasErrors('globalDbaName');
+
+        $this->assertDatabaseCount('server_database_users', 0);
+        Process::assertNothingRan();
+    }
+
     public function test_disabled_execution_prevents_import(): void
     {
         config()->set('minipanel.execution_enabled', false);

@@ -3,7 +3,10 @@
 namespace App\Livewire;
 
 use App\Models\DnsSetting;
+use App\Models\ServerDatabaseUser;
 use App\Models\ServerSetting;
+use App\Services\AuditLogger;
+use App\Services\ServerDatabases;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Validation\Rule;
@@ -468,6 +471,31 @@ class ServerSetup extends Component
 
     public string $password = '';
 
+    public string $globalDbaName = '';
+
+    public string $globalDbaPassword = '';
+
+    public function createGlobalDba(): void
+    {
+        abort_unless(Auth::check(), 403);
+        $this->validate([
+            'globalDbaName' => ['required', 'regex:/^[a-zA-Z][a-zA-Z0-9_]{0,31}$/D', Rule::notIn(['root', 'mysql', 'mariadb', 'debian_sys_maint']), Rule::unique('server_database_users', 'name')],
+            'globalDbaPassword' => ['required', 'string', 'min:12', 'max:128'],
+        ]);
+
+        $user = ServerDatabaseUser::create(['name' => $this->globalDbaName, 'password' => $this->globalDbaPassword]);
+        try {
+            app(ServerDatabases::class)->apply();
+        } catch (ValidationException $exception) {
+            $user->delete();
+
+            throw $exception;
+        }
+        app(AuditLogger::class)->record('database.global-dba.created', $user);
+        $this->reset('globalDbaName', 'globalDbaPassword');
+        session()->flash('globalDbaNotice', 'DBA global creado. Úsalo en DataGrip mediante túnel SSH; MariaDB permanece privado.');
+    }
+
     public function mount(): void
     {
         abort_unless(Auth::check(), 403);
@@ -511,6 +539,7 @@ class ServerSetup extends Component
             'panelUpdateWebhookUrl' => route('webhooks.panel-update'),
             'panelUpdateWebhookConfigured' => filled(config('minipanel.panel_update_webhook_secret')),
             'panelUpdateBranch' => (string) config('minipanel.panel_update_branch'),
+            'globalDbaUsers' => ServerDatabaseUser::query()->orderBy('name')->get(),
         ])->layout('components.layouts.app');
     }
 }
