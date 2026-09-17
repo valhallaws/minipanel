@@ -8,7 +8,9 @@ Type=simple
 User=minipanel-control
 WorkingDirectory=/var/www/minipanel
 ExecStart=/usr/bin/php artisan queue:work --tries=1 --timeout=7200 --sleep=2 --max-time=14400
-Restart=on-failure
+# queue:work exits successfully when --max-time elapses.  It still needs a
+# new process, otherwise panel operations stop after four hours.
+Restart=always
 RestartSec=5
 TimeoutStopSec=7300
 PrivateTmp=true

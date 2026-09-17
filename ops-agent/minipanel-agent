@@ -333,6 +333,10 @@ install -o root -g root -m 0644 "$app_path/ops-agent/minipanel-snapshot.cjs" /us
 install -o root -g root -m 0644 "$app_path/ops-agent/minipanel-extract.py" /usr/local/lib/minipanel-extract.py
 install -o root -g root -m 0644 "$app_path/ops-agent/minipanel-root-terminal.service" /etc/systemd/system/minipanel-root-terminal.service
 install -o root -g root -m 0644 "$app_path/ops-agent/minipanel-root-terminal.nginx.conf" /etc/nginx/snippets/minipanel-root-terminal.conf
+worker_template="$(mktemp)"
+sed -e "s|^User=.*|User=$panel_user|" -e "s|^WorkingDirectory=.*|WorkingDirectory=$app_path|" "$app_path/ops-agent/minipanel-worker.service" > "$worker_template"
+install -o root -g root -m 0644 "$worker_template" /etc/systemd/system/minipanel-worker.service
+rm -f "$worker_template"
 install -o root -g root -m 0750 "$app_path/ops-agent/minipanel-agent" /usr/local/bin/minipanel-agent
 COMPOSER_ALLOW_SUPERUSER=1 /usr/bin/php"$php_version" /usr/bin/composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --working-dir="$app_path"
 npm --prefix "$app_path" ci --no-audit --no-fund
