@@ -19,13 +19,13 @@ if (!/^[a-z0-9.-]+$/.test(domain || '') || !['http', 'https'].includes(scheme)) 
         });
         await context.routeWebSocket(/.*/, socket => socket.close());
         const page = await context.newPage();
-        const response = await page.goto(`${scheme}://${domain}/`, {waitUntil: 'domcontentloaded', timeout: 25000});
+        const response = await page.goto(`${scheme}://${domain}/`, {waitUntil: 'domcontentloaded', timeout: 12000});
         if (!response || response.status() >= 400) throw new Error('Site unavailable');
-        await page.waitForLoadState('load', {timeout: 10000}).catch(() => undefined);
-        await page.waitForLoadState('networkidle', {timeout: 5000}).catch(() => undefined);
+        await page.waitForLoadState('load', {timeout: 5000}).catch(() => undefined);
+        await page.waitForLoadState('networkidle', {timeout: 2000}).catch(() => undefined);
         await page.evaluate(async () => { await document.fonts?.ready; });
         await page.waitForTimeout(500);
-        const screenshot = await page.screenshot({type: 'jpeg', quality: 65, animations: 'disabled', timeout: 10000});
+        const screenshot = await page.screenshot({type: 'jpeg', quality: 65, animations: 'disabled', timeout: 5000});
         process.stdout.write(screenshot.toString('base64'));
     } finally {
         await browser.close();

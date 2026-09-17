@@ -576,7 +576,7 @@ if [[ "$action" == 'snapshot' ]]; then
   [[ "${extra_arguments[0]:-}" =~ ^https?$ ]] || fail 'Invalid snapshot scheme'
   exec 8>/run/lock/minipanel-snapshot.lock
   flock -w 5 8 || fail 'Snapshot busy'
-  exec systemd-run --quiet --wait --pipe --collect -p DynamicUser=yes -p PrivateTmp=yes -p ProtectSystem=strict -p ProtectHome=yes -p NoNewPrivileges=yes -p 'InaccessiblePaths=/var/www /etc/minipanel /var/lib/minipanel' -p IPAddressDeny=any -p IPAddressAllow=localhost -p MemoryMax=768M -p TasksMax=128 -p RuntimeMaxSec=45 --setenv=PLAYWRIGHT_BROWSERS_PATH=/opt/minipanel-snapshots/browsers /usr/bin/node /usr/local/lib/minipanel-snapshot.cjs "$public_domain" "${extra_arguments[0]}"
+  exec systemd-run --quiet --wait --pipe --collect -p DynamicUser=yes -p PrivateTmp=yes -p ProtectSystem=strict -p ProtectHome=yes -p NoNewPrivileges=yes -p 'InaccessiblePaths=/var/www /etc/minipanel /var/lib/minipanel' -p IPAddressDeny=any -p IPAddressAllow=localhost -p MemoryMax=512M -p TasksMax=128 -p RuntimeMaxSec=25 --setenv=PLAYWRIGHT_BROWSERS_PATH=/opt/minipanel-snapshots/browsers /usr/bin/node /usr/local/lib/minipanel-snapshot.cjs "$public_domain" "${extra_arguments[0]}"
 fi
 
 safe_relative_path() {

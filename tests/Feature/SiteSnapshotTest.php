@@ -33,7 +33,7 @@ class SiteSnapshotTest extends TestCase
         $this->assertSame($image, Storage::disk('local')->get('site-snapshots/'.$site->id.'.jpg'));
         $this->get(route('sites.snapshot', $site))->assertRedirect(route('login'));
         $this->actingAs(User::factory()->create())->get(route('sites.snapshot', $site))->assertOk()->assertHeader('Content-Type', 'image/jpeg');
-        Process::assertRan(fn ($process) => $process->command[2] === 'snapshot' && $process->timeout === 55);
+        Process::assertRan(fn ($process) => $process->command[2] === 'snapshot' && $process->timeout === 30);
     }
 
     public function test_failed_capture_preserves_previous_image(): void
@@ -55,6 +55,22 @@ class SiteSnapshotTest extends TestCase
         Livewire::actingAs(User::factory()->create())->test(SiteManager::class, ['site' => $this->site()])
             ->call('refreshSnapshot')->call('refreshSnapshot', true)->assertHasNoErrors();
         Queue::assertPushed(CaptureSiteSnapshot::class, 1);
+    }
+
+    public function test_site_snapshot_jobs_share_one_global_uniqueness_key(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Queue::fake([CaptureSiteSnapshot::class]);
+        $user = User::factory()->create();
+        $firstSite = $this->site();
+        $secondSite = Site::create(['name' => 'Other', 'domain' => 'other.example.com', 'path' => '/var/www/other.example.com', 'status' => 'active', 'php_version' => '8.3', 'runtime' => 'static']);
+
+        Livewire::actingAs($user)->test(SiteManager::class, ['site' => $firstSite])->call('refreshSnapshot');
+        Livewire::actingAs($user)->test(SiteManager::class, ['site' => $secondSite])->call('refreshSnapshot');
+
+        Queue::assertPushed(CaptureSiteSnapshot::class, 1);
+        $this->assertSame('site-snapshot', (new CaptureSiteSnapshot($firstSite->id))->uniqueId());
+        $this->assertSame('site-snapshot', (new CaptureSiteSnapshot($secondSite->id))->uniqueId());
     }
 
     public function test_header_status_changes_are_queued_and_do_not_change_status_prematurely(): void

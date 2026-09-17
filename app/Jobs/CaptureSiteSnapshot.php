@@ -17,17 +17,17 @@ class CaptureSiteSnapshot implements ShouldBeUnique, ShouldQueue
     /**
      * Create a new job instance.
      */
-    public int $timeout = 65;
+    public int $timeout = 35;
 
     public int $tries = 1;
 
-    public int $uniqueFor = 120;
+    public int $uniqueFor = 60;
 
     public function __construct(public int $siteId) {}
 
     public function uniqueId(): string
     {
-        return (string) $this->siteId;
+        return 'site-snapshot';
     }
 
     /**
@@ -40,7 +40,7 @@ class CaptureSiteSnapshot implements ShouldBeUnique, ShouldQueue
             if (! config('minipanel.execution_enabled') || $site->status !== 'active') {
                 throw new \RuntimeException('Snapshot unavailable');
             }
-            $result = Process::timeout(55)->run([
+            $result = Process::timeout(30)->run([
                 'sudo', '/usr/local/bin/minipanel-agent', 'snapshot', $site->path, $site->resourceDomain(),
                 '', 'main', $site->php_version, '0', '0', 'static', '', $site->ssl_enabled ? 'https' : 'http',
             ]);
