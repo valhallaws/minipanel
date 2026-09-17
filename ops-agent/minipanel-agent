@@ -562,6 +562,9 @@ if [[ "$action" == 'repository' ]]; then
   [[ -d "$site_root" && ! -L "$site_root" && -f "$nginx_file" && ! -L "$nginx_file" ]] || fail 'Unknown domain'
   [[ "$(id -u "$site_user")" != 0 && "$(id -u "$site_user")" != "$(id -u "$panel_identity")" ]] || fail 'Invalid site identity'
   case "${extra_arguments[0]:-}" in key|folders|mkdir|sync|laravel-state|laravel-env-read|laravel-env-write|laravel-command|laravel-maintenance|laravel-puppeteer) ;; *) fail 'Invalid repository operation' ;; esac
+  if [[ "${extra_arguments[0]}" == 'sync' ]]; then
+    find -P "$site_root" -xdev -exec chown -h "$site_user":www-data {} +
+  fi
   execution_timeout=20
   [[ "${extra_arguments[0]}" != sync ]] || execution_timeout=1680
   [[ "${extra_arguments[0]}" != laravel-command ]] || execution_timeout=840
