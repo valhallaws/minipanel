@@ -39,6 +39,8 @@ final class MiniPanelGit
         if (! $lock || ! flock($lock, LOCK_EX | LOCK_NB)) {
             throw new RuntimeException('Otra operación Git está en curso.');
         }
+        $maintenanceStarted = false;
+        $maintenanceTarget = null;
         try {
             if (str_starts_with($action, 'laravel-')) {
                 return $this->laravel($action, $data);
@@ -122,12 +124,12 @@ final class MiniPanelGit
                 }
             }
             $initialClone = ($data['initial'] ?? false) === true;
-            $maintenanceStarted = false;
             if (! $initialClone && is_dir($target.'/.git') && is_file($target.'/vendor/autoload.php') && $this->isLaravelProject($target) && ! is_file($target.'/storage/framework/down')) {
                 $this->step('Activando mantenimiento Laravel');
                 $this->run(['/usr/bin/php'.$this->phpVersion, 'artisan', 'down', '--no-interaction'], $target);
                 $this->done();
                 $maintenanceStarted = true;
+                $maintenanceTarget = $target;
             }
             if (! is_dir($target.'/.git')) {
                 $this->step('Obteniendo archivos');
@@ -210,6 +212,7 @@ final class MiniPanelGit
                 $this->step('Reanudando Laravel');
                 $this->run(['/usr/bin/php'.$this->phpVersion, 'artisan', 'up', '--no-interaction'], $target);
                 $this->done();
+                $maintenanceStarted = false;
             }
             $commits = [];
             foreach (array_filter(explode("\n", trim($this->git(['log', '-5', '--format=%H%x09%s'], $target)))) as $line) {
@@ -219,6 +222,15 @@ final class MiniPanelGit
 
             return ['result' => ['branch' => $branch, 'branches' => $branches, 'commits' => $commits, 'project_type' => $projectType]];
         } catch (Throwable $exception) {
+            if ($maintenanceStarted && is_string($maintenanceTarget)) {
+                try {
+                    $this->step('Reanudando Laravel');
+                    $this->run(['/usr/bin/php'.$this->phpVersion, 'artisan', 'up', '--no-interaction'], $maintenanceTarget);
+                    $this->done();
+                } catch (Throwable $restoreException) {
+                    $exception = new RuntimeException($exception->getMessage()."\nAdemás, no se pudo desactivar el mantenimiento: ".$restoreException->getMessage(), previous: $exception);
+                }
+            }
             if ($this->step !== '') {
                 $this->emit(['step' => $this->step, 'status' => 'failed', 'detail' => $exception->getMessage()]);
             }
