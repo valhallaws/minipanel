@@ -7,8 +7,10 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class CaptureSiteSnapshot implements ShouldBeUnique, ShouldQueue
 {
@@ -44,20 +46,28 @@ class CaptureSiteSnapshot implements ShouldBeUnique, ShouldQueue
                 'sudo', '/usr/local/bin/minipanel-agent', 'snapshot', $site->path, $site->resourceDomain(),
                 '', 'main', $site->php_version, '0', '0', 'static', '', $site->ssl_enabled ? 'https' : 'http',
             ]);
+            if (! $result->successful()) {
+                throw new \RuntimeException(trim($result->errorOutput()) ?: 'Snapshot process failed');
+            }
             $image = base64_decode(trim($result->output()), true);
-            if (! $result->successful() || $image === false || strlen($image) > 2097152 || ! str_starts_with($image, "\xff\xd8\xff")) {
-                throw new \RuntimeException('Invalid snapshot');
+            if ($image === false || strlen($image) > 2097152 || ! str_starts_with($image, "\xff\xd8\xff")) {
+                throw new \RuntimeException('Snapshot did not return a valid JPEG image');
             }
             if (! Storage::disk('local')->put('site-snapshots/'.$site->id.'.jpg', $image)) {
                 throw new \RuntimeException('Snapshot storage unavailable');
             }
             Cache::put('site-snapshot-'.$site->id, ['status' => 'ready', 'version' => time()], now()->addDays(7));
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
+            Log::warning('Site snapshot failed.', [
+                'site_id' => $site->id,
+                'domain' => $site->resourceDomain(),
+                'reason' => $exception->getMessage(),
+            ]);
             $this->failed($exception);
         }
     }
 
-    public function failed(?\Throwable $exception): void
+    public function failed(?Throwable $exception): void
     {
         Cache::put('site-snapshot-'.$this->siteId, ['status' => 'failed'], now()->addHour());
     }

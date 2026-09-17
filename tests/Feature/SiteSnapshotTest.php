@@ -11,6 +11,7 @@ use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -40,12 +41,14 @@ class SiteSnapshotTest extends TestCase
     {
         config()->set('minipanel.execution_enabled', true);
         Storage::fake('local');
-        Process::fake(fn () => Process::result('invalid', exitCode: 1));
+        Log::spy();
+        Process::fake(fn () => Process::result('invalid', errorOutput: 'Chromium exited unexpectedly', exitCode: 1));
         $site = $this->site();
         Storage::disk('local')->put('site-snapshots/'.$site->id.'.jpg', 'old');
         (new CaptureSiteSnapshot($site->id))->handle();
         $this->assertSame('old', Storage::disk('local')->get('site-snapshots/'.$site->id.'.jpg'));
         $this->assertSame('failed', Cache::get('site-snapshot-'.$site->id)['status']);
+        Log::shouldHaveReceived('warning')->once()->with('Site snapshot failed.', \Mockery::on(fn (array $context): bool => $context['reason'] === 'Chromium exited unexpectedly'));
     }
 
     public function test_snapshot_requests_are_deduplicated(): void

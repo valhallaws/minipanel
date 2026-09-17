@@ -30,4 +30,4 @@ if (!/^[a-z0-9.-]+$/.test(domain || '') || !['http', 'https'].includes(scheme)) 
     } finally {
         await browser.close();
     }
-})().catch(() => { process.stderr.write('Snapshot failed.\n'); process.exit(1); });
+})().catch(error => { process.stderr.write('Snapshot failed: ' + (error instanceof Error ? error.message : 'Unknown error') + '\n'); process.exit(1); });
