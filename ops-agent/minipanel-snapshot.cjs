@@ -1,11 +1,22 @@
 const { chromium } = require('/opt/minipanel-snapshots/node_modules/playwright');
 const [domain, scheme] = process.argv.slice(2);
 if (!/^[a-z0-9.-]+$/.test(domain || '') || !['http', 'https'].includes(scheme)) process.exit(64);
+const imageHosts = new Set(['images.unsplash.com', 'plus.unsplash.com']);
+const imageRoutes = new Map(
+    (process.env.MINIPANEL_SNAPSHOT_IMAGE_ROUTES || '')
+        .split(',')
+        .map(route => route.split('=', 2))
+        .filter(([host, address]) => imageHosts.has(host) && /^(\d{1,3}\.){3}\d{1,3}$/.test(address || '')),
+);
 
 (async () => {
+    const resolverRules = ['MAP ' + domain + ' 127.0.0.1', 'EXCLUDE localhost'];
+    for (const [host, address] of imageRoutes) {
+        resolverRules.push('MAP ' + host + ' ' + address);
+    }
     const browser = await chromium.launch({
         chromiumSandbox: false,
-        args: [`--host-resolver-rules=MAP ${domain} 127.0.0.1, EXCLUDE localhost`, '--no-proxy-server'],
+        args: ['--host-resolver-rules=' + resolverRules.join(','), '--no-proxy-server'],
     });
     try {
         const context = await browser.newContext({viewport: {width: 1280, height: 800}, serviceWorkers: 'block', acceptDownloads: false});

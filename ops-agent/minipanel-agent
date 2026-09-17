@@ -572,11 +572,21 @@ if [[ "$action" == 'repository' ]]; then
 fi
 
 if [[ "$action" == 'snapshot' ]]; then
+  snapshot_image_hosts=(images.unsplash.com plus.unsplash.com)
+  snapshot_image_routes=''
+  snapshot_network_properties=(-p 'IPAddressAllow=127.0.0.0/8' -p 'IPAddressAllow=::1/128')
+  for snapshot_image_host in "${snapshot_image_hosts[@]}"; do
+    snapshot_image_address="$(getent ahostsv4 "$snapshot_image_host" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+    if [[ "$snapshot_image_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      snapshot_image_routes+="${snapshot_image_routes:+,}${snapshot_image_host}=${snapshot_image_address}"
+      snapshot_network_properties+=(-p "IPAddressAllow=$snapshot_image_address")
+    fi
+  done
   [[ -f "$nginx_file" && ! -L "$nginx_file" ]] || fail 'Unknown site'
   [[ "${extra_arguments[0]:-}" =~ ^https?$ ]] || fail 'Invalid snapshot scheme'
   exec 8>/run/lock/minipanel-snapshot.lock
   flock -w 5 8 || fail 'Snapshot busy'
-  exec systemd-run --quiet --wait --pipe --collect -p DynamicUser=yes -p PrivateTmp=yes -p ProtectSystem=strict -p ProtectHome=yes -p NoNewPrivileges=yes -p 'InaccessiblePaths=/var/www /etc/minipanel /var/lib/minipanel' -p IPAddressDeny=any -p IPAddressAllow=localhost -p MemoryMax=512M -p TasksMax=128 -p RuntimeMaxSec=25 --setenv=PLAYWRIGHT_BROWSERS_PATH=/opt/minipanel-snapshots/browsers /usr/bin/node /usr/local/lib/minipanel-snapshot.cjs "$public_domain" "${extra_arguments[0]}"
+  exec systemd-run --quiet --wait --pipe --collect -p DynamicUser=yes -p PrivateTmp=yes -p ProtectSystem=strict -p ProtectHome=yes -p NoNewPrivileges=yes -p 'InaccessiblePaths=/var/www /etc/minipanel /var/lib/minipanel' -p IPAddressDeny=any "${snapshot_network_properties[@]}" -p MemoryMax=512M -p TasksMax=128 -p RuntimeMaxSec=25 --setenv=PLAYWRIGHT_BROWSERS_PATH=/opt/minipanel-snapshots/browsers --setenv="MINIPANEL_SNAPSHOT_IMAGE_ROUTES=$snapshot_image_routes" /usr/bin/node /usr/local/lib/minipanel-snapshot.cjs "$public_domain" "${extra_arguments[0]}"
 fi
 
 safe_relative_path() {
