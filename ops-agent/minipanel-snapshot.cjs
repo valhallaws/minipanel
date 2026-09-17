@@ -34,7 +34,10 @@ const imageRoutes = new Map(
         if (!response || response.status() >= 400) throw new Error('Site unavailable');
         await page.waitForLoadState('load', {timeout: 5000}).catch(() => undefined);
         await page.waitForLoadState('networkidle', {timeout: 2000}).catch(() => undefined);
-        await page.evaluate(async () => { await document.fonts?.ready; });
+        await page.evaluate(() => Promise.race([
+            document.fonts?.ready || Promise.resolve(),
+            new Promise(resolve => setTimeout(resolve, 1500)),
+        ]), {timeout: 2000}).catch(() => undefined);
         await page.waitForTimeout(500);
         const screenshot = await page.screenshot({type: 'jpeg', quality: 65, animations: 'disabled', timeout: 5000});
         process.stdout.write(screenshot.toString('base64'));
