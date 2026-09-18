@@ -168,6 +168,15 @@ final class MiniPanelSiteLifecycle
                 $paths[] = $path;
             }
         }
+        foreach (glob('/etc/minipanel/reverb-ports/'.$domain.'-r*') ?: [] as $path) {
+            if (! preg_match('/^'.preg_quote($domain, '/').'-r\d+$/D', basename($path))) {
+                continue;
+            }
+            if (is_link($path) || ! is_file($path) || fileowner($path) !== 0) {
+                throw new RuntimeException('Unexpected Reverb port allocation ownership');
+            }
+            $paths[] = $path;
+        }
         foreach (glob('/var/backups/minipanel/'.$domain.'-*') ?: [] as $path) {
             if (preg_match('/^'.preg_quote($domain, '/').'-(?:pre-restore-)?\d{8}-\d{6}(?:\.tar\.gz)?$/D', basename($path))) {
                 $paths[] = $path;
