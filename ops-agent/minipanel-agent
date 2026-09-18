@@ -700,6 +700,7 @@ ensure_php_runtime() {
     "php${version}-intl" \
     "php${version}-mbstring" \
     "php${version}-mysql" \
+    "php${version}-sqlite3" \
     "php${version}-redis" \
     "php${version}-soap" \
     "php${version}-xml" \
@@ -763,7 +764,7 @@ ensure_php_extensions() {
   IFS=',' read -r -a extensions <<< "$php_extensions"
   for extension in "${extensions[@]}"; do
     [[ -z "$extension" ]] && continue
-    case "$extension" in bcmath|bz2|curl|mbstring|mysql|xml|zip|gd|intl|redis|soap|imagick) ;; *) fail "PHP extension not allowed: $extension" ;; esac
+    case "$extension" in bcmath|bz2|curl|mbstring|mysql|sqlite3|xml|zip|gd|intl|redis|soap|imagick) ;; *) fail "PHP extension not allowed: $extension" ;; esac
     package="$extension"; [[ "$extension" == 'xml' ]] && package='xml'
     packages+=("php${version}-${package}")
   done
