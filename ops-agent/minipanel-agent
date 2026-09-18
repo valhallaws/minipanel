@@ -32,6 +32,53 @@ panel_php_service="php${panel_php_version}-fpm"
 
 fail() { echo "$1" >&2; exit 64; }
 
+ensure_php_repository() {
+  local version="$1" launchpad_home='/var/lib/minipanel/launchpadlib'
+
+  apt-cache show "php${version}-fpm" >/dev/null 2>&1 && return 0
+
+  echo "PHP $version no está disponible en los repositorios actuales; habilitando el repositorio de PHP…"
+  if ! command -v add-apt-repository >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
+  fi
+  install -d -m 0700 -o root -g root "$launchpad_home"
+  HOME="$launchpad_home" XDG_CACHE_HOME="$launchpad_home" add-apt-repository -y ppa:ondrej/php
+  DEBIAN_FRONTEND=noninteractive apt-get update
+  apt-cache show "php${version}-fpm" >/dev/null 2>&1 || fail "PHP $version is unavailable for this server"
+}
+
+ensure_php_runtime() {
+  local version="$1"
+
+  [[ "$version" =~ ^8\.[0-9]{1,2}$ ]] || fail 'Unsupported PHP version'
+  if [[ ! -x "/usr/sbin/php-fpm$version" ]]; then
+    echo "Instalando PHP $version, PHP-FPM y el stack Laravel…"
+    ensure_php_repository "$version"
+  else
+    echo "Verificando el stack Laravel de PHP $version…"
+  fi
+
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    "php${version}-cli" \
+    "php${version}-fpm" \
+    "php${version}-common" \
+    "php${version}-opcache" \
+    "php${version}-bcmath" \
+    "php${version}-bz2" \
+    "php${version}-curl" \
+    "php${version}-gd" \
+    "php${version}-intl" \
+    "php${version}-mbstring" \
+    "php${version}-mysql" \
+    "php${version}-sqlite3" \
+    "php${version}-redis" \
+    "php${version}-soap" \
+    "php${version}-xml" \
+    "php${version}-zip"
+  systemctl enable --now "php${version}-fpm"
+}
+
 ensure_node_runtime() {
   local version="$1" nvm_directory='/opt/minipanel/nvm'
 
@@ -659,53 +706,6 @@ EOF
   chown root:root "$pool_file"; chmod 0644 "$pool_file"
   "/usr/sbin/php-fpm$version" -t
   systemctl reload "php$version-fpm"
-}
-
-ensure_php_repository() {
-  local version="$1" launchpad_home='/var/lib/minipanel/launchpadlib'
-
-  apt-cache show "php${version}-fpm" >/dev/null 2>&1 && return 0
-
-  echo "PHP $version no está disponible en los repositorios actuales; habilitando el repositorio de PHP…"
-  if ! command -v add-apt-repository >/dev/null 2>&1; then
-    DEBIAN_FRONTEND=noninteractive apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
-  fi
-  install -d -m 0700 -o root -g root "$launchpad_home"
-  HOME="$launchpad_home" XDG_CACHE_HOME="$launchpad_home" add-apt-repository -y ppa:ondrej/php
-  DEBIAN_FRONTEND=noninteractive apt-get update
-  apt-cache show "php${version}-fpm" >/dev/null 2>&1 || fail "PHP $version is unavailable for this server"
-}
-
-ensure_php_runtime() {
-  local version="$1"
-
-  [[ "$version" =~ ^8\.[0-9]{1,2}$ ]] || fail 'Unsupported PHP version'
-  if [[ ! -x "/usr/sbin/php-fpm$version" ]]; then
-    echo "Instalando PHP $version, PHP-FPM y el stack Laravel…"
-    ensure_php_repository "$version"
-  else
-    echo "Verificando el stack Laravel de PHP $version…"
-  fi
-
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    "php${version}-cli" \
-    "php${version}-fpm" \
-    "php${version}-common" \
-    "php${version}-opcache" \
-    "php${version}-bcmath" \
-    "php${version}-bz2" \
-    "php${version}-curl" \
-    "php${version}-gd" \
-    "php${version}-intl" \
-    "php${version}-mbstring" \
-    "php${version}-mysql" \
-    "php${version}-sqlite3" \
-    "php${version}-redis" \
-    "php${version}-soap" \
-    "php${version}-xml" \
-    "php${version}-zip"
-  systemctl enable --now "php${version}-fpm"
 }
 
 composer_as_site() {
