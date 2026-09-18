@@ -154,6 +154,44 @@ set_reverb_server_port() {
   [[ "$reverb_server_port" =~ ^[0-9]{2,5}$ ]] && (( reverb_server_port >= 1024 && reverb_server_port <= 65535 )) || fail 'Invalid Reverb server port'
 }
 
+include_reverb_proxy_in_servers() {
+  local temporary_nginx
+
+  temporary_nginx="$(mktemp)"
+  awk -v target_line="include $reverb_snippet;" '
+    function brace_delta(value, copy, openings, closings) {
+      copy = value
+      openings = gsub(/\{/, "", copy)
+      closings = gsub(/\}/, "", copy)
+      return openings - closings
+    }
+    {
+      raw = $0
+      line = $0
+      sub(/^[[:space:]]*/, "", line)
+      if (line == target_line) {
+        next
+      }
+      if (! in_server && line ~ /^server[[:space:]]*\{/) {
+        in_server = 1
+        depth = 0
+      }
+      if (in_server && line ~ /^[}][[:space:]]*$/ && depth == 1) {
+        print "    " target_line
+      }
+      print raw
+      if (in_server) {
+        depth += brace_delta(raw)
+        if (depth == 0) {
+          in_server = 0
+        }
+      }
+    }
+  ' "$nginx_file" > "$temporary_nginx"
+  cp -p "$temporary_nginx" "$nginx_file"
+  rm -f "$temporary_nginx"
+}
+
 configure_reverb_proxy() {
   local temporary_snippet nginx_backup snippet_backup snippet_existed='0'
 
@@ -192,7 +230,7 @@ location ^~ /apps/ {
 EOF
   chown root:root "$temporary_snippet"
   chmod 0644 "$temporary_snippet"
-  grep -qF "include $reverb_snippet;" "$nginx_file" || sed -i "\$i\\    include $reverb_snippet;" "$nginx_file"
+  include_reverb_proxy_in_servers
   mv "$temporary_snippet" "$reverb_snippet"
   if ! nginx -t; then
     cp -p "$nginx_backup" "$nginx_file"
