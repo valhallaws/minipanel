@@ -569,6 +569,7 @@ if [[ "$action" == 'repository' ]]; then
   [[ "${extra_arguments[0]}" != sync ]] || execution_timeout=1680
   [[ "${extra_arguments[0]}" != laravel-command ]] || execution_timeout=840
   [[ "${extra_arguments[0]}" != laravel-puppeteer ]] || execution_timeout=1680
+  ensure_php_runtime "$php_version"
   ensure_node_runtime "$node_version"
   [[ "${extra_arguments[0]}" != laravel-puppeteer ]] || ensure_chrome_runtime
   exec /usr/bin/timeout --kill-after=5 "$execution_timeout" /usr/sbin/runuser -u "$site_user" -- /usr/bin/setpriv --no-new-privs /usr/bin/env -i "HOME=$site_root" "MINIPANEL_NPM_BINARY=$node_npm" PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/php /usr/local/lib/minipanel-git.php "$site_root" "$php_version" "${extra_arguments[0]}"
@@ -693,6 +694,7 @@ ensure_php_runtime() {
     "php${version}-common" \
     "php${version}-opcache" \
     "php${version}-bcmath" \
+    "php${version}-bz2" \
     "php${version}-curl" \
     "php${version}-gd" \
     "php${version}-intl" \
@@ -761,7 +763,7 @@ ensure_php_extensions() {
   IFS=',' read -r -a extensions <<< "$php_extensions"
   for extension in "${extensions[@]}"; do
     [[ -z "$extension" ]] && continue
-    case "$extension" in bcmath|curl|mbstring|mysql|xml|zip|gd|intl|redis|soap|imagick) ;; *) fail "PHP extension not allowed: $extension" ;; esac
+    case "$extension" in bcmath|bz2|curl|mbstring|mysql|xml|zip|gd|intl|redis|soap|imagick) ;; *) fail "PHP extension not allowed: $extension" ;; esac
     package="$extension"; [[ "$extension" == 'xml' ]] && package='xml'
     packages+=("php${version}-${package}")
   done
