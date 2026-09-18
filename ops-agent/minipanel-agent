@@ -212,7 +212,7 @@ remove_reverb_proxy() {
   temporary_nginx="$(mktemp)"
   nginx_backup="$(mktemp)"
   cp -p "$nginx_file" "$nginx_backup"
-  awk -v include="include $reverb_snippet;" '{ line = $0; sub(/^[[:space:]]*/, "", line); if (line != include) print }' "$nginx_file" > "$temporary_nginx"
+  awk -v target_line="include $reverb_snippet;" '{ line = $0; sub(/^[[:space:]]*/, "", line); if (line != target_line) print }' "$nginx_file" > "$temporary_nginx"
   cp -p "$temporary_nginx" "$nginx_file"
   rm -f "$temporary_nginx"
   if ! nginx -t; then
