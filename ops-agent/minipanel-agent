@@ -616,9 +616,9 @@ if [[ "$action" == 'repository' ]]; then
   [[ "${extra_arguments[0]}" != sync ]] || execution_timeout=1680
   [[ "${extra_arguments[0]}" != laravel-command ]] || execution_timeout=840
   [[ "${extra_arguments[0]}" != laravel-puppeteer ]] || execution_timeout=1680
-  ensure_php_runtime "$php_version"
-  ensure_node_runtime "$node_version"
-  [[ "${extra_arguments[0]}" != laravel-puppeteer ]] || ensure_chrome_runtime
+  ensure_php_runtime "$php_version" >&2
+  ensure_node_runtime "$node_version" >&2
+  [[ "${extra_arguments[0]}" != laravel-puppeteer ]] || ensure_chrome_runtime >&2
   exec /usr/bin/timeout --kill-after=5 "$execution_timeout" /usr/sbin/runuser -u "$site_user" -- /usr/bin/setpriv --no-new-privs /usr/bin/env -i "HOME=$site_root" "MINIPANEL_NPM_BINARY=$node_npm" PATH=/usr/local/bin:/usr/bin:/bin /usr/bin/php /usr/local/lib/minipanel-git.php "$site_root" "$php_version" "${extra_arguments[0]}"
 fi
 
