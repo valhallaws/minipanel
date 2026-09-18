@@ -206,10 +206,24 @@ EOF
 }
 
 remove_reverb_proxy() {
+  local temporary_nginx nginx_backup
+
   [[ -f "$nginx_file" && ! -L "$nginx_file" ]] || return 0
-  sed -i "\\|^[[:space:]]*include $reverb_snippet;[[:space:]]*\\$|d" "$nginx_file"
+  temporary_nginx="$(mktemp)"
+  nginx_backup="$(mktemp)"
+  cp -p "$nginx_file" "$nginx_backup"
+  awk -v include="include $reverb_snippet;" '{ line = $0; sub(/^[[:space:]]*/, "", line); if (line != include) print }' "$nginx_file" > "$temporary_nginx"
+  cp -p "$temporary_nginx" "$nginx_file"
+  rm -f "$temporary_nginx"
+  if ! nginx -t; then
+    cp -p "$nginx_backup" "$nginx_file"
+    nginx -t && systemctl reload nginx || true
+    rm -f "$nginx_backup"
+    fail 'Reverb proxy removal was rejected by Nginx'
+  fi
+  systemctl reload nginx
   rm -f "$reverb_snippet"
-  nginx -t && systemctl reload nginx
+  rm -f "$nginx_backup"
 }
 
 save_node_version() {
