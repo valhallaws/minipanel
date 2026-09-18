@@ -17,10 +17,12 @@ key_directory="/etc/minipanel/deploy-keys"
 key_file="$key_directory/$domain"
 alias_file="/etc/minipanel/aliases/$domain"
 nginx_snippet="/etc/nginx/snippets/minipanel-${domain}.conf"
+reverb_snippet="/etc/nginx/snippets/minipanel-${domain}-reverb.conf"
 node_version_file="/etc/minipanel/node-versions/$domain"
 node_version='22'
 node_binary=''
 node_npm=''
+reverb_server_port='8080'
 panel_php_version='8.3'
 panel_php_version_file='/etc/minipanel/panel-php-version'
 
@@ -113,6 +115,74 @@ ensure_chrome_runtime() {
     packages+=(libasound2)
   fi
   DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get install -y "${packages[@]}"
+}
+
+set_reverb_server_port() {
+  local application_path="$1" configured_port=''
+
+  if [[ -f "$application_path/.env" && ! -L "$application_path/.env" ]]; then
+    configured_port="$(sed -nE 's/^[[:space:]]*REVERB_SERVER_PORT[[:space:]]*=[[:space:]]*([^[:space:]#]+).*$/\1/p' "$application_path/.env" | tail -n 1 | tr -d "'\"")"
+  fi
+  reverb_server_port="${configured_port:-8080}"
+  [[ "$reverb_server_port" =~ ^[0-9]{2,5}$ ]] && (( reverb_server_port >= 1024 && reverb_server_port <= 65535 )) || fail 'Invalid Reverb server port'
+}
+
+configure_reverb_proxy() {
+  local temporary_snippet nginx_backup snippet_backup snippet_existed='0'
+
+  install -d -m 0755 -o root -g root /etc/nginx/snippets
+  temporary_snippet="$(mktemp /etc/nginx/snippets/minipanel-reverb.XXXXXX)"
+  nginx_backup="$(mktemp)"
+  snippet_backup="$(mktemp)"
+  cp -p "$nginx_file" "$nginx_backup"
+  if [[ -f "$reverb_snippet" ]]; then
+    cp -p "$reverb_snippet" "$snippet_backup"
+    snippet_existed='1'
+  fi
+  cat > "$temporary_snippet" <<EOF
+location ^~ /app/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host \$http_host;
+    proxy_set_header Scheme \$scheme;
+    proxy_set_header SERVER_PORT \$server_port;
+    proxy_set_header REMOTE_ADDR \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "Upgrade";
+    proxy_pass http://127.0.0.1:$reverb_server_port;
+}
+location ^~ /apps/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host \$http_host;
+    proxy_set_header Scheme \$scheme;
+    proxy_set_header SERVER_PORT \$server_port;
+    proxy_set_header REMOTE_ADDR \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "Upgrade";
+    proxy_pass http://127.0.0.1:$reverb_server_port;
+}
+EOF
+  chown root:root "$temporary_snippet"
+  chmod 0644 "$temporary_snippet"
+  grep -qF "include $reverb_snippet;" "$nginx_file" || sed -i "\$i\\    include $reverb_snippet;" "$nginx_file"
+  mv "$temporary_snippet" "$reverb_snippet"
+  if ! nginx -t; then
+    cp -p "$nginx_backup" "$nginx_file"
+    if [[ "$snippet_existed" == '1' ]]; then cp -p "$snippet_backup" "$reverb_snippet"; else rm -f "$reverb_snippet"; fi
+    nginx -t && systemctl reload nginx || true
+    rm -f "$nginx_backup" "$snippet_backup"
+    fail 'Reverb proxy configuration was rejected by Nginx'
+  fi
+  systemctl reload nginx
+  rm -f "$nginx_backup" "$snippet_backup"
+}
+
+remove_reverb_proxy() {
+  [[ -f "$nginx_file" && ! -L "$nginx_file" ]] || return 0
+  sed -i "\\|^[[:space:]]*include $reverb_snippet;[[:space:]]*\\$|d" "$nginx_file"
+  rm -f "$reverb_snippet"
+  nginx -t && systemctl reload nginx
 }
 
 save_node_version() {
@@ -794,6 +864,10 @@ update_server_names() {
 stop_site_services() {
   systemctl stop "minipanel-${domain}.service" "minipanel-${domain}.timer" 2>/dev/null || true
   local unit
+  for unit in /etc/systemd/system/minipanel-"$domain"-reverb-r*.service; do
+    [[ -e "$unit" ]] || continue
+    systemctl stop "$(basename "$unit")" 2>/dev/null || true
+  done
   for unit in /etc/systemd/system/minipanel-"$domain"-queue-*.timer /etc/systemd/system/minipanel-"$domain"-queue-*.service; do
     [[ -e "$unit" ]] || continue
     systemctl stop "$(basename "$unit")" 2>/dev/null || true
@@ -804,6 +878,12 @@ restore_site_services() {
   local unit
   [[ -f "$service_file" ]] && systemctl start "minipanel-${domain}.service" 2>/dev/null || true
   [[ -f "$timer_file" ]] && systemctl start "minipanel-${domain}.timer" 2>/dev/null || true
+  for unit in /etc/systemd/system/minipanel-"$domain"-reverb-r*.service; do
+    [[ -e "$unit" ]] || continue
+    if systemctl is-enabled --quiet "$(basename "$unit")"; then
+      systemctl start "$(basename "$unit")" 2>/dev/null || true
+    fi
+  done
   for unit in /etc/systemd/system/minipanel-"$domain"-queue-*.service; do
     [[ -e "$unit" ]] || continue
     if systemctl is-enabled --quiet "$(basename "$unit")"; then
@@ -993,9 +1073,11 @@ EOF
         systemctl disable --now "$reverb_unit" 2>/dev/null || true
         rm -f "/etc/systemd/system/$reverb_unit"
         systemctl daemon-reload
+        remove_reverb_proxy
         echo 'Reverb deshabilitado.'
         exit 0
       fi
+      set_reverb_server_port "$application_path"
       [[ ! -L "/etc/systemd/system/$reverb_unit" ]] || fail 'Unexpected service link'
       cat > "/etc/systemd/system/$reverb_unit" <<EOF
 [Unit]
@@ -1008,7 +1090,7 @@ Group=$(id -gn "$site_user")
 NoNewPrivileges=yes
 Environment=HOME=$site_root
 WorkingDirectory=$application_path
-ExecStart=/usr/bin/php$php_version artisan reverb:start --no-interaction
+ExecStart=/usr/bin/php$php_version artisan reverb:start --host=127.0.0.1 --port=$reverb_server_port --no-interaction
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
@@ -1018,6 +1100,7 @@ EOF
       systemctl daemon-reload
       systemctl enable --now "$reverb_unit"
       systemctl is-active --quiet "$reverb_unit" || fail 'Reverb service did not start'
+      configure_reverb_proxy
       echo 'Reverb activado.'
     else
       [[ "$name" != schedule ]] || fail 'The name schedule is reserved'
@@ -1534,7 +1617,7 @@ EOF
       getent shadow "$site_user" | cut -d: -f8 > "$snapshot/account-expiry"
       : > "$snapshot/services"
       while read -r unit _; do
-        [[ "$unit" == "minipanel-${domain}.service" || "$unit" == "minipanel-${domain}.timer" || "$unit" == minipanel-"${domain}"-queue-*.service || "$unit" == minipanel-"${domain}"-queue-*.timer ]] || continue
+        [[ "$unit" == "minipanel-${domain}.service" || "$unit" == "minipanel-${domain}.timer" || "$unit" == minipanel-"${domain}"-queue-*.service || "$unit" == minipanel-"${domain}"-queue-*.timer || "$unit" == minipanel-"${domain}"-reverb-r*.service ]] || continue
         enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
         active="$(systemctl is-active "$unit" 2>/dev/null || true)"
         printf '%s\t%s\t%s\n' "$unit" "$enabled" "$active" >> "$snapshot/services"
@@ -1578,7 +1661,7 @@ EOF
     db_name=''; db_user=''
     if [[ -f "$site_root/.env" ]]; then db_name="$(sed -nE 's/^DB_DATABASE=([^[:space:]]+).*$/\1/p' "$site_root/.env" | head -n1 | tr -d "'\"")"; db_user="$(sed -nE 's/^DB_USERNAME=([^[:space:]]+).*$/\1/p' "$site_root/.env" | head -n1 | tr -d "'\"")"; fi
     [[ -z "$db_name" || "$db_name" =~ ^[A-Za-z0-9_]+$ ]] || fail 'Unsafe database name'; [[ -z "$db_user" || "$db_user" =~ ^[A-Za-z0-9_]+$ ]] || fail 'Unsafe database user'
-    rm -f "/etc/nginx/sites-enabled/$domain" "$nginx_file" "$nginx_snippet" "$alias_file" "$key_file" "$key_file.pub"; systemctl disable --now "minipanel-${domain}.service" "minipanel-${domain}.timer" 2>/dev/null || true; rm -f /etc/systemd/system/minipanel-"$domain"*.service /etc/systemd/system/minipanel-"$domain"*.timer; systemctl daemon-reload
+    rm -f "/etc/nginx/sites-enabled/$domain" "$nginx_file" "$nginx_snippet" "$reverb_snippet" "$alias_file" "$key_file" "$key_file.pub"; systemctl disable --now "minipanel-${domain}.service" "minipanel-${domain}.timer" 2>/dev/null || true; rm -f /etc/systemd/system/minipanel-"$domain"*.service /etc/systemd/system/minipanel-"$domain"*.timer; systemctl daemon-reload
     if [[ -n "$db_name" ]]; then [[ -f /etc/minipanel/mariadb-provisioner.cnf ]] || fail 'MariaDB provisioner is not configured'; database_client="$(command -v mariadb || command -v mysql || true)"; [[ -n "$database_client" ]] || fail 'MariaDB client is not installed'; "$database_client" --defaults-extra-file=/etc/minipanel/mariadb-provisioner.cnf -e "DROP DATABASE IF EXISTS \`$db_name\`; DROP USER IF EXISTS '$db_user'@'%'; DROP USER IF EXISTS '$db_user'@'localhost';"; fi
     rm -rf "$site_root" "/var/backups/minipanel/$domain"-*.tar.gz; id "$site_user" &>/dev/null && userdel -r "$site_user" || true; nginx -t && systemctl reload nginx; echo "Site deleted permanently: $domain"
     ;;

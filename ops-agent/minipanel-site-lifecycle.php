@@ -145,7 +145,7 @@ final class MiniPanelSiteLifecycle
     {
         $domain = $this->domain;
         $paths = [$this->siteRoot, '/etc/nginx/sites-enabled/'.$domain, '/etc/nginx/sites-available/'.$domain,
-            '/etc/nginx/snippets/minipanel-'.$domain.'.conf', '/etc/minipanel/aliases/'.$domain,
+            '/etc/nginx/snippets/minipanel-'.$domain.'.conf', '/etc/nginx/snippets/minipanel-'.$domain.'-reverb.conf', '/etc/minipanel/aliases/'.$domain,
             '/etc/minipanel/deploy-keys/'.$domain, '/etc/minipanel/deploy-keys/'.$domain.'.pub',
             '/var/lib/minipanel/suspended/'.$domain, '/var/spool/cron/crontabs/'.$this->user];
         foreach (['8.2', '8.3', '8.4'] as $version) {
