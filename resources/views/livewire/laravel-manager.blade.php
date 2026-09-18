@@ -9,7 +9,9 @@
     @if(session('notice'))<div class="notice" role="status">{{ session('notice') }}</div>@endif
     @if($errors->any())<div class="error" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     <nav class="project-tabs" aria-label="Herramientas Laravel">
-        @foreach(['dashboard' => 'Resumen', 'artisan' => 'Artisan', 'composer' => 'Composer', 'npm' => 'Node.js', 'schedule' => 'Schedule', 'queues' => 'Queues'] as $key => $label)<button type="button" @click="tab = '{{ $key }}'" :class="{ active: tab === '{{ $key }}' }">{{ $label }}</button>@endforeach
+        @php($tabs = ['dashboard' => 'Resumen', 'artisan' => 'Artisan', 'composer' => 'Composer', 'npm' => 'Node.js', 'schedule' => 'Schedule', 'queues' => 'Queues'])
+        @if($reverbConfigured)@php($tabs['reverb'] = 'Reverb')@endif
+        @foreach($tabs as $key => $label)<button type="button" @click="tab = '{{ $key }}'" :class="{ active: tab === '{{ $key }}' }">{{ $label }}</button>@endforeach
     </nav>
     <section class="panel" x-show="tab === 'dashboard'">
         @php($project = $repositories->firstWhere('id', $repositoryId))
@@ -81,12 +83,27 @@
         <p class="muted">El retry_after de tu conexión Laravel debe ser mayor que el timeout del worker.</p>
         <div class="button-row"><button class="primary" wire:click="queueService(true)">Guardar y activar</button><button class="secondary" wire:click="queueService(false)">Deshabilitar cola</button><button class="secondary" wire:click="queueCommand('queue:restart')">Reiniciar workers</button><button class="secondary" wire:click="queueCommand('queue:failed')">Jobs fallidos</button><button class="ghost" wire:click="serviceStatus">Consultar servicios</button></div>
     </section>
-    <section class="panel" x-show="['schedule', 'queues'].includes(tab)" x-cloak>
+    @if($reverbConfigured)
+    <section class="panel" x-show="tab === 'reverb'" x-cloak>
+        @php($reverbAction = $activity->first(fn ($operation) => ($operation->parameters['service'] ?? null) === 'reverb'))
+        @php($reverbInspection = $activity->first(fn ($operation) => ($operation->parameters['service'] ?? null) === 'status' && $operation->status === 'finished'))
+        @php($reverbInspectionState = json_decode($reverbInspection?->output ?? '', true))
+        @php($reverbState = is_array($reverbInspectionState) ? ($reverbInspectionState['reverb'] ?? 'unknown') : ($reverbAction?->status === 'finished' ? (($reverbAction->parameters['enabled'] ?? false) ? 'active' : 'inactive') : ($reverbAction?->status === 'failed' ? 'failed' : 'unknown')))
+        <div class="schedule-heading">
+            <div><h2>Laravel Reverb</h2><p class="muted">Reverb está configurado en este proyecto. Freyja lo ejecuta como un servicio independiente.</p></div>
+            <span class="schedule-state {{ $reverbState === 'active' ? 'is-active' : 'is-inactive' }}">{{ match($reverbState) { 'active' => 'Reverb activo', 'failed' => 'Reverb con error', 'unknown' => 'Reverb sin verificar', default => 'Reverb detenido' } }}</span>
+        </div>
+        <div class="button-row"><button class="primary" wire:click="reverb(true)">Activar Reverb</button><button class="secondary" wire:click="reverb(false)">Detener Reverb</button><button class="ghost" wire:click="serviceStatus">Consultar estado</button></div>
+    </section>
+    @endif
+    <section class="panel" x-show="['schedule', 'queues', 'reverb'].includes(tab)" x-cloak>
         @foreach($activity as $operation)
             @php($isQueue = ($operation->parameters['service'] ?? '') === 'queue' || str_starts_with($operation->parameters['arguments'][0] ?? '', 'queue:'))
             @php($isSchedule = in_array($operation->parameters['service'] ?? '', ['schedule', 'status'], true))
+            @php($isReverb = ($operation->parameters['service'] ?? '') === 'reverb' || (($operation->parameters['service'] ?? '') === 'status' && $reverbConfigured))
             @if($isSchedule)<article x-show="tab === 'schedule'" wire:key="laravel-operation-{{ $operation->id }}"><small>{{ $operation->status }} · {{ $operation->created_at->format('d/m/Y H:i') }}</small><pre class="laravel-console">{{ $operation->output }}</pre></article>@endif
             @if($isQueue)<article x-show="tab === 'queues'" wire:key="laravel-operation-{{ $operation->id }}"><small>{{ $operation->status }} · {{ $operation->created_at->format('d/m/Y H:i') }}</small><pre class="laravel-console">{{ $operation->output }}</pre></article>@endif
+            @if($isReverb)<article x-show="tab === 'reverb'" wire:key="laravel-reverb-operation-{{ $operation->id }}"><small>{{ $operation->status }} · {{ $operation->created_at->format('d/m/Y H:i') }}</small><pre class="laravel-console">{{ $operation->output }}</pre></article>@endif
         @endforeach
     </section>
     @if($showEnvironment)

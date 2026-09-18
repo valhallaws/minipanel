@@ -160,7 +160,8 @@ final class MiniPanelSiteLifecycle
         foreach (glob('/etc/systemd/system/minipanel-'.$domain.'*') ?: [] as $path) {
             $name = basename($path);
             if (in_array($name, ['minipanel-'.$domain.'.service', 'minipanel-'.$domain.'.timer', 'minipanel-'.$domain.'-schedule.service'], true) ||
-                preg_match('/^minipanel-'.preg_quote($domain, '/').'-queue-[a-zA-Z0-9_-]+-\d+\.(?:service|timer)$/D', $name)) {
+                preg_match('/^minipanel-'.preg_quote($domain, '/').'-queue-[a-zA-Z0-9_-]+-\d+\.(?:service|timer)$/D', $name) ||
+                preg_match('/^minipanel-'.preg_quote($domain, '/').'-reverb-r\d+\.service$/D', $name)) {
                 if (is_link($path) || ! is_file($path) || fileowner($path) !== 0) {
                     throw new RuntimeException('Unexpected service ownership');
                 }

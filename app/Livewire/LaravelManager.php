@@ -27,6 +27,8 @@ class LaravelManager extends Component
     #[Locked]
     public array $artisanSuggestions = [];
 
+    public bool $reverbConfigured = false;
+
     public bool $showEnvironment = false;
 
     public string $environment = '';
@@ -64,6 +66,7 @@ class LaravelManager extends Component
         $this->maintenance = null;
         $this->maintenanceSecret = '';
         $this->artisanSuggestions = [];
+        $this->reverbConfigured = false;
         app(DomainLaravel::class)->directory($this->site, $this->repositoryId);
         $this->inspectLaravel();
     }
@@ -73,6 +76,7 @@ class LaravelManager extends Component
         $state = app(DomainLaravel::class)->quick($this->site, $this->repositoryId, 'laravel-state');
         $this->maintenance = $state['maintenance'];
         $this->artisanSuggestions = $state['commands'] ?? [];
+        $this->reverbConfigured = (bool) ($state['reverb_configured'] ?? false);
     }
 
     public function openEnvironment(): void
@@ -137,6 +141,15 @@ class LaravelManager extends Component
     {
         $this->validate(['queueName' => ['required', 'regex:/^[A-Za-z0-9_-]{1,32}$/'], 'workers' => ['integer', 'between:1,12'], 'tries' => ['integer', 'between:1,20'], 'workerTimeout' => ['integer', 'between:10,3600']]);
         $this->enqueue(['service' => 'queue', 'enabled' => $enabled, 'name' => $this->queueName, 'workers' => $this->workers, 'tries' => $this->tries, 'timeout' => $this->workerTimeout]);
+    }
+
+    public function reverb(bool $enabled): void
+    {
+        if ($enabled) {
+            $this->inspectLaravel();
+            abort_unless($this->reverbConfigured, 422);
+        }
+        $this->enqueue(['service' => 'reverb', 'enabled' => $enabled]);
     }
 
     public function serviceStatus(): void

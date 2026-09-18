@@ -262,7 +262,11 @@ final class MiniPanelGit
                 throw new RuntimeException('No se pudo consultar Laravel. Comprueba sus dependencias y configuración.');
             }
 
-            return [...$state, 'env_exists' => is_file($env)];
+            $reverbConfigured = is_file($env)
+                && in_array('reverb:start', array_column($state['commands'], 'name'), true)
+                && $this->hasReverbConfiguration((string) file_get_contents($env));
+
+            return [...$state, 'env_exists' => is_file($env), 'reverb_configured' => $reverbConfigured];
         }
         if (in_array($action, ['laravel-env-read', 'laravel-env-write'], true)) {
             if (! is_file($env) || filesize($env) > 1048576) {
@@ -367,6 +371,28 @@ final class MiniPanelGit
         $this->done();
 
         return ['output' => substr($output, -16000)];
+    }
+
+    private function hasReverbConfiguration(string $contents): bool
+    {
+        $values = [];
+        foreach (preg_split('/\R/', $contents) ?: [] as $line) {
+            if (preg_match('/^\s*(?<key>[A-Z][A-Z0-9_]*)\s*=\s*(?<value>.*)$/D', $line, $matches)) {
+                $values[$matches['key']] = trim($matches['value'], " \t\"'");
+            }
+        }
+
+        if (($values['BROADCAST_CONNECTION'] ?? null) !== 'reverb') {
+            return false;
+        }
+
+        foreach (['REVERB_APP_ID', 'REVERB_APP_KEY', 'REVERB_APP_SECRET'] as $key) {
+            if (($values[$key] ?? '') === '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function isLaravelProject(string $target): bool

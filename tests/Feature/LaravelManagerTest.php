@@ -78,6 +78,27 @@ class LaravelManagerTest extends TestCase
         $this->assertDatabaseCount('deployments', 0);
     }
 
+    public function test_reverb_tab_is_available_only_when_laravel_reports_valid_reverb_configuration(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Queue::fake([RunLaravelCommand::class]);
+        $repository = $this->repository();
+        Process::fake(fn () => Process::result(json_encode([
+            'maintenance' => false,
+            'commands' => [['name' => 'reverb:start', 'description' => 'Start Reverb']],
+            'reverb_configured' => true,
+        ])));
+
+        Livewire::actingAs(User::factory()->create())->test(LaravelManager::class, ['site' => $repository->site])
+            ->call('inspectLaravel')->assertSet('reverbConfigured', true)->assertSee('Reverb')
+            ->call('reverb', true)->assertHasNoErrors();
+
+        $operation = Deployment::sole();
+        $this->assertSame('reverb', $operation->parameters['service']);
+        $this->assertTrue($operation->parameters['enabled']);
+        Queue::assertPushed(RunLaravelCommand::class, fn ($job) => $job->deploymentId === $operation->id);
+    }
+
     public function test_env_is_loaded_and_saved_synchronously_without_logging_secrets(): void
     {
         config()->set('minipanel.execution_enabled', true);
@@ -163,6 +184,19 @@ class LaravelManagerTest extends TestCase
         (new RunLaravelCommand($operation->id))->handle();
         $this->assertSame('finished', $operation->fresh()->status);
         Process::assertRan(fn ($process) => in_array('laravel-service', $process->command, true) && in_array('apps/erp', $process->command, true) && in_array('schedule', $process->command, true));
+    }
+
+    public function test_reverb_service_receives_project_scope(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result('Reverb activado.'));
+        $repository = $this->repository();
+        $operation = Deployment::create(['site_id' => $repository->site_id, 'action' => 'laravel-command', 'parameters' => ['repository_id' => $repository->id, 'service' => 'reverb', 'enabled' => true], 'status' => 'queued']);
+
+        (new RunLaravelCommand($operation->id))->handle();
+
+        $this->assertSame('finished', $operation->fresh()->status);
+        Process::assertRan(fn ($process) => in_array('laravel-service', $process->command, true) && in_array('apps/erp', $process->command, true) && in_array('reverb', $process->command, true));
     }
 
     public function test_scheduler_activation_updates_the_project_timer_status(): void

@@ -929,20 +929,26 @@ case "$action" in
     project_id="${extra_arguments[0]:-}"; directory="${extra_arguments[1]:-}"; kind="${extra_arguments[2]:-}"; enabled="${extra_arguments[3]:-}"
     name="${extra_arguments[4]:-}"; workers="${extra_arguments[5]:-}"; tries="${extra_arguments[6]:-}"; worker_timeout="${extra_arguments[7]:-}"
     [[ "$project_id" =~ ^[0-9]{1,10}$ && "$enabled" =~ ^[01]$ ]] || fail 'Invalid project settings'
-    [[ "$kind" == queue || "$kind" == schedule || "$kind" == status ]] || fail 'Invalid service type'
+    [[ "$kind" == queue || "$kind" == reverb || "$kind" == schedule || "$kind" == status ]] || fail 'Invalid service type'
     [[ "$name" =~ ^[A-Za-z0-9_-]{1,32}$ && "$workers" =~ ^([1-9]|1[0-2])$ && "$tries" =~ ^([1-9]|1[0-9]|20)$ && "$worker_timeout" =~ ^[0-9]{2,4}$ ]] || fail 'Invalid worker settings'
     (( worker_timeout >= 10 && worker_timeout <= 3600 )) || fail 'Invalid timeout'
     application_path="$(safe_site_path "$directory")"
     [[ -f "$nginx_file" && ! -L "$nginx_file" && -f "$application_path/artisan" ]] || fail 'Unknown Laravel project'
     [[ "$(id -u "$site_user")" != 0 && "$site_user" != "$(cat /etc/minipanel/panel-user)" ]] || fail 'Invalid site identity'
     prefix="minipanel-${domain}-queue-r${project_id}"
+    reverb_unit="minipanel-${domain}-reverb-r${project_id}.service"
     if [[ "$kind" == status ]]; then
       scheduler_state="$(systemctl is-active "${prefix}-schedule-1.timer" 2>/dev/null || true)"
+      reverb_state="$(systemctl is-active "$reverb_unit" 2>/dev/null || true)"
       case "$scheduler_state" in
         active|inactive|failed) ;;
         *) scheduler_state='unknown' ;;
       esac
-      printf '{"scheduler":"%s"}\n' "$scheduler_state"
+      case "$reverb_state" in
+        active|inactive|failed) ;;
+        *) reverb_state='unknown' ;;
+      esac
+      printf '{"scheduler":"%s","reverb":"%s"}\n' "$scheduler_state" "$reverb_state"
       exit 0
     fi
     exec 8>"/run/lock/minipanel-laravel-${domain}.lock"
@@ -982,6 +988,37 @@ EOF
       systemctl enable --now "$base.timer"
       systemctl is-active --quiet "$base.timer" || fail 'Scheduler timer did not start'
       echo 'Scheduler habilitado cada minuto.'
+    elif [[ "$kind" == reverb ]]; then
+      if [[ "$enabled" == 0 ]]; then
+        systemctl disable --now "$reverb_unit" 2>/dev/null || true
+        rm -f "/etc/systemd/system/$reverb_unit"
+        systemctl daemon-reload
+        echo 'Reverb deshabilitado.'
+        exit 0
+      fi
+      [[ ! -L "/etc/systemd/system/$reverb_unit" ]] || fail 'Unexpected service link'
+      cat > "/etc/systemd/system/$reverb_unit" <<EOF
+[Unit]
+Description=MiniPanel Laravel Reverb for $domain project $project_id
+After=network.target
+[Service]
+Type=simple
+User=$site_user
+Group=$(id -gn "$site_user")
+NoNewPrivileges=yes
+Environment=HOME=$site_root
+WorkingDirectory=$application_path
+ExecStart=/usr/bin/php$php_version artisan reverb:start --no-interaction
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+[Install]
+WantedBy=multi-user.target
+EOF
+      systemctl daemon-reload
+      systemctl enable --now "$reverb_unit"
+      systemctl is-active --quiet "$reverb_unit" || fail 'Reverb service did not start'
+      echo 'Reverb activado.'
     else
       [[ "$name" != schedule ]] || fail 'The name schedule is reserved'
       for worker in $(seq 1 12); do
