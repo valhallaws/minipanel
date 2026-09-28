@@ -182,7 +182,8 @@ class LaravelManager extends Component
             ->take(10)
             ->get();
         $scheduleInspection = $activity->first(fn (Deployment $operation): bool => ($operation->parameters['arguments'][0] ?? null) === 'schedule:list' && $operation->status === 'finished');
-        $serviceInspection = $activity->first(fn (Deployment $operation): bool => ($operation->parameters['service'] ?? null) === 'status' && $operation->status === 'finished');
+        $latestServiceStatus = $activity->first(fn (Deployment $operation): bool => ($operation->parameters['service'] ?? null) === 'status');
+        $serviceInspection = $latestServiceStatus?->status === 'finished' ? $latestServiceStatus : null;
 
         return view('livewire.laravel-manager', [
             'repositories' => $this->site->repositories()->where('project_type', 'Laravel')->orderBy('id')->get(),
@@ -191,6 +192,7 @@ class LaravelManager extends Component
             'scheduleInspection' => $scheduleInspection,
             'scheduledTasks' => $this->scheduledTasks($scheduleInspection?->output ?? ''),
             'serviceInspection' => $serviceInspection,
+            'serviceStatusPending' => in_array($latestServiceStatus?->status, ['queued', 'running'], true),
             'queueServices' => $this->queueServices($serviceInspection?->output ?? ''),
         ])->layout('components.layouts.app');
     }

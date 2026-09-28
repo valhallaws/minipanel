@@ -186,6 +186,28 @@ class LaravelManagerTest extends TestCase
         Process::assertRan(fn ($process) => in_array('laravel-service', $process->command, true) && in_array('apps/erp', $process->command, true) && in_array('schedule', $process->command, true));
     }
 
+    public function test_queue_change_queues_a_follow_up_worker_status_inspection(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Queue::fake([RunLaravelCommand::class]);
+        Process::fake(fn () => Process::result('Cola default activada con 2 worker(s).'));
+        $repository = $this->repository();
+        $operation = Deployment::create([
+            'site_id' => $repository->site_id,
+            'action' => 'laravel-command',
+            'parameters' => ['repository_id' => $repository->id, 'service' => 'queue', 'enabled' => true, 'name' => 'default', 'workers' => 2, 'tries' => 3, 'timeout' => 60],
+            'status' => 'queued',
+        ]);
+
+        (new RunLaravelCommand($operation->id))->handle();
+
+        $statusOperation = Deployment::where('id', '!=', $operation->id)->sole();
+        $this->assertSame('status', $statusOperation->parameters['service']);
+        $this->assertSame('queued', $statusOperation->status);
+        $this->assertSame($repository->id, $statusOperation->parameters['repository_id']);
+        Queue::assertPushed(RunLaravelCommand::class, fn ($job) => $job->deploymentId === $statusOperation->id);
+    }
+
     public function test_reverb_service_receives_project_scope(): void
     {
         config()->set('minipanel.execution_enabled', true);

@@ -81,6 +81,7 @@ class RunLaravelCommand implements ShouldQueue
             }
             $this->updateServiceState($site, $parameters, $result->successful(), $output);
             $operation->update(['status' => $result->successful() ? 'finished' : 'failed', 'output' => mb_substr(trim($output) ?: 'Operación completada.', -16000), 'finished_at' => now()]);
+            $this->refreshQueueStatus($operation, $result->successful());
         } catch (Throwable $exception) {
             $this->failed($exception);
         }
@@ -121,6 +122,28 @@ class RunLaravelCommand implements ShouldQueue
             'scheduler_enabled' => $status === 'active',
             'scheduler_status' => $status,
         ]);
+    }
+
+    private function refreshQueueStatus(Deployment $operation, bool $successful): void
+    {
+        if (! $successful || ($operation->parameters['service'] ?? null) !== 'queue') {
+            return;
+        }
+
+        $statusOperation = Deployment::create([
+            'site_id' => $operation->site_id,
+            'user_id' => $operation->user_id,
+            'action' => 'laravel-command',
+            'parameters' => [
+                'repository_id' => $operation->parameters['repository_id'],
+                'service' => 'status',
+                'enabled' => false,
+            ],
+            'status' => 'queued',
+            'output' => 'Actualizando estado de los workers…',
+        ]);
+
+        self::dispatch($statusOperation->id);
     }
 
     public function failed(?Throwable $exception): void

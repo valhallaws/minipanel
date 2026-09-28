@@ -82,10 +82,12 @@
         @php($configuredQueueWorkers = collect($queueServices)->sum('configured_workers'))
         <div class="schedule-heading">
             <div><h2>Colas y workers</h2><p class="muted">Cada cola tiene sus propios workers. El estado se consulta directamente desde systemd.</p></div>
-            <span class="schedule-state {{ $serviceInspection && $configuredQueueWorkers > 0 && $activeQueueWorkers === $configuredQueueWorkers ? 'is-active' : 'is-inactive' }}">{{ $serviceInspection ? ($configuredQueueWorkers ? "$activeQueueWorkers de $configuredQueueWorkers workers activos" : 'Sin colas configuradas') : 'Colas sin verificar' }}</span>
+            <span class="schedule-state {{ ! $serviceStatusPending && $serviceInspection && $configuredQueueWorkers > 0 && $activeQueueWorkers === $configuredQueueWorkers ? 'is-active' : 'is-inactive' }}">{{ $serviceStatusPending ? 'Actualizando estado…' : ($serviceInspection ? ($configuredQueueWorkers ? "$activeQueueWorkers de $configuredQueueWorkers workers activos" : 'Sin colas configuradas') : 'Colas sin verificar') }}</span>
         </div>
         <div class="button-row"><button class="secondary" wire:click="serviceStatus" wire:loading.attr="disabled">Actualizar estado</button><button class="secondary" wire:click="queueCommand('queue:restart')" wire:loading.attr="disabled">Reiniciar todos los workers</button><button class="ghost" wire:click="queueCommand('queue:failed')" wire:loading.attr="disabled">Ver jobs fallidos</button></div>
-        @if($serviceInspection)
+        @if($serviceStatusPending)
+            <div class="schedule-empty">Comprobando los workers configurados en el servidor…</div>
+        @elseif($serviceInspection)
             <p class="schedule-inspected">Estado consultado: {{ $serviceInspection->created_at->format('d/m/Y H:i') }}</p>
             @if(count($queueServices))
                 <div class="queue-list" role="list">
@@ -103,7 +105,7 @@
         @else
             <div class="schedule-empty">Pulsa <strong>Actualizar estado</strong> para comprobar si los workers están activos.</div>
         @endif
-        <details class="queue-raw"><summary>Ver respuesta técnica del servidor</summary><pre class="laravel-console">{{ $serviceInspection?->output }}</pre></details>
+        @if($serviceInspection)<details class="queue-raw"><summary>Ver respuesta técnica del servidor</summary><pre class="laravel-console">{{ $serviceInspection->output }}</pre></details>@endif
         <h3>Configurar una cola</h3><p class="muted">Crea o actualiza los workers de la cola indicada. Deshabilitar detiene todos sus workers.</p>
         <div class="form-grid"><label>Nombre de cola<input wire:model="queueName"></label><label>Workers<input type="number" min="1" max="12" wire:model="workers"></label><label>Intentos<input type="number" min="1" max="20" wire:model="tries"></label><label>Timeout (segundos)<input type="number" min="10" max="3600" wire:model="workerTimeout"></label></div>
         <p class="muted">El retry_after de tu conexión Laravel debe ser mayor que el timeout del worker.</p>
