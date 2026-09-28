@@ -78,10 +78,36 @@
         @endif
     </section>
     <section class="panel" x-show="tab === 'queues'" x-cloak>
-        <h2>Colas y workers</h2><p>Crea o actualiza los workers de la cola indicada. Deshabilitar detiene todos sus workers.</p>
+        @php($activeQueueWorkers = collect($queueServices)->sum('active_workers'))
+        @php($configuredQueueWorkers = collect($queueServices)->sum('configured_workers'))
+        <div class="schedule-heading">
+            <div><h2>Colas y workers</h2><p class="muted">Cada cola tiene sus propios workers. El estado se consulta directamente desde systemd.</p></div>
+            <span class="schedule-state {{ $serviceInspection && $configuredQueueWorkers > 0 && $activeQueueWorkers === $configuredQueueWorkers ? 'is-active' : 'is-inactive' }}">{{ $serviceInspection ? ($configuredQueueWorkers ? "$activeQueueWorkers de $configuredQueueWorkers workers activos" : 'Sin colas configuradas') : 'Colas sin verificar' }}</span>
+        </div>
+        <div class="button-row"><button class="secondary" wire:click="serviceStatus" wire:loading.attr="disabled">Actualizar estado</button><button class="secondary" wire:click="queueCommand('queue:restart')" wire:loading.attr="disabled">Reiniciar todos los workers</button><button class="ghost" wire:click="queueCommand('queue:failed')" wire:loading.attr="disabled">Ver jobs fallidos</button></div>
+        @if($serviceInspection)
+            <p class="schedule-inspected">Estado consultado: {{ $serviceInspection->created_at->format('d/m/Y H:i') }}</p>
+            @if(count($queueServices))
+                <div class="queue-list" role="list">
+                    @foreach($queueServices as $name => $queue)
+                        @php($isQueueActive = $queue['configured_workers'] > 0 && $queue['active_workers'] === $queue['configured_workers'])
+                        <article class="queue-card" role="listitem" wire:key="queue-service-{{ $repositoryId }}-{{ $name }}">
+                            <header><div><code>{{ $name }}</code><small>{{ $queue['active_workers'] }} de {{ $queue['configured_workers'] }} workers activos</small></div><span class="schedule-state {{ $isQueueActive ? 'is-active' : 'is-inactive' }}">{{ $isQueueActive ? 'Activa' : 'Requiere atención' }}</span></header>
+                            <details class="queue-details"><summary>Ver configuración y workers</summary><dl><dt>Intentos</dt><dd>{{ $queue['tries'] ?: '—' }}</dd><dt>Timeout</dt><dd>{{ $queue['timeout'] ? $queue['timeout'].' segundos' : '—' }}</dd></dl><div class="queue-workers">@foreach($queue['workers'] as $worker)<span class="queue-worker {{ $worker['status'] === 'active' ? 'is-active' : 'is-inactive' }}">Worker {{ $worker['number'] }} · {{ match($worker['status']) { 'active' => 'Activo', 'inactive' => 'Detenido', 'failed' => 'Con error', 'activating' => 'Iniciando', 'deactivating' => 'Deteniendo', default => 'Sin verificar' } }}</span>@endforeach</div></details>
+                        </article>
+                    @endforeach
+                </div>
+            @else
+                <div class="schedule-empty">No hay workers configurados para este proyecto.</div>
+            @endif
+        @else
+            <div class="schedule-empty">Pulsa <strong>Actualizar estado</strong> para comprobar si los workers están activos.</div>
+        @endif
+        <details class="queue-raw"><summary>Ver respuesta técnica del servidor</summary><pre class="laravel-console">{{ $serviceInspection?->output }}</pre></details>
+        <h3>Configurar una cola</h3><p class="muted">Crea o actualiza los workers de la cola indicada. Deshabilitar detiene todos sus workers.</p>
         <div class="form-grid"><label>Nombre de cola<input wire:model="queueName"></label><label>Workers<input type="number" min="1" max="12" wire:model="workers"></label><label>Intentos<input type="number" min="1" max="20" wire:model="tries"></label><label>Timeout (segundos)<input type="number" min="10" max="3600" wire:model="workerTimeout"></label></div>
         <p class="muted">El retry_after de tu conexión Laravel debe ser mayor que el timeout del worker.</p>
-        <div class="button-row"><button class="primary" wire:click="queueService(true)">Guardar y activar</button><button class="secondary" wire:click="queueService(false)">Deshabilitar cola</button><button class="secondary" wire:click="queueCommand('queue:restart')">Reiniciar workers</button><button class="secondary" wire:click="queueCommand('queue:failed')">Jobs fallidos</button><button class="ghost" wire:click="serviceStatus">Consultar servicios</button></div>
+        <div class="button-row"><button class="primary" wire:click="queueService(true)" wire:loading.attr="disabled">Guardar y activar</button><button class="secondary" wire:click="queueService(false)" wire:loading.attr="disabled">Deshabilitar cola</button></div>
     </section>
     @if($reverbConfigured)
     <section class="panel" x-show="tab === 'reverb'" x-cloak>

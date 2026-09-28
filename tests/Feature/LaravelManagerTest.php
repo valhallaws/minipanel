@@ -228,6 +228,39 @@ class LaravelManagerTest extends TestCase
         $this->assertSame('inactive', $site->scheduler_status);
     }
 
+    public function test_queue_status_renders_a_visual_worker_summary_and_details(): void
+    {
+        $repository = $this->repository();
+        Deployment::create([
+            'site_id' => $repository->site_id,
+            'action' => 'laravel-command',
+            'parameters' => ['repository_id' => $repository->id, 'service' => 'status', 'enabled' => false],
+            'status' => 'finished',
+            'output' => json_encode([
+                'scheduler' => 'active',
+                'reverb' => 'inactive',
+                'queues' => [
+                    'default' => [
+                        'workers' => [['number' => 1, 'status' => 'active'], ['number' => 2, 'status' => 'failed']],
+                        'active_workers' => 1,
+                        'configured_workers' => 2,
+                        'tries' => 3,
+                        'timeout' => 60,
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+        Livewire::actingAs(User::factory()->create())->test(LaravelManager::class, ['site' => $repository->site])
+            ->assertSee('1 de 2 workers activos')
+            ->assertSee('default')
+            ->assertSee('Requiere atención')
+            ->assertSee('Ver configuración y workers')
+            ->assertSee('Worker 1 · Activo')
+            ->assertSee('Worker 2 · Con error')
+            ->assertSee('60 segundos');
+    }
+
     public function test_schedule_list_renders_tasks_with_a_human_readable_cadence(): void
     {
         $repository = $this->repository();

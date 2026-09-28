@@ -182,6 +182,7 @@ class LaravelManager extends Component
             ->take(10)
             ->get();
         $scheduleInspection = $activity->first(fn (Deployment $operation): bool => ($operation->parameters['arguments'][0] ?? null) === 'schedule:list' && $operation->status === 'finished');
+        $serviceInspection = $activity->first(fn (Deployment $operation): bool => ($operation->parameters['service'] ?? null) === 'status' && $operation->status === 'finished');
 
         return view('livewire.laravel-manager', [
             'repositories' => $this->site->repositories()->where('project_type', 'Laravel')->orderBy('id')->get(),
@@ -189,7 +190,46 @@ class LaravelManager extends Component
             'activity' => $activity,
             'scheduleInspection' => $scheduleInspection,
             'scheduledTasks' => $this->scheduledTasks($scheduleInspection?->output ?? ''),
+            'serviceInspection' => $serviceInspection,
+            'queueServices' => $this->queueServices($serviceInspection?->output ?? ''),
         ])->layout('components.layouts.app');
+    }
+
+    /**
+     * @return array<string, array{workers: array<int, array{number: int, status: string}>, active_workers: int, configured_workers: int, tries: int, timeout: int}>
+     */
+    private function queueServices(string $output): array
+    {
+        $services = json_decode($output, true);
+        $queues = is_array($services) ? ($services['queues'] ?? []) : [];
+
+        if (! is_array($queues)) {
+            return [];
+        }
+
+        return collect($queues)
+            ->filter(fn (mixed $queue, mixed $name): bool => is_string($name) && is_array($queue))
+            ->map(function (array $queue): array {
+                $workers = collect($queue['workers'] ?? [])
+                    ->filter(fn (mixed $worker): bool => is_array($worker) && isset($worker['number'], $worker['status']))
+                    ->map(fn (array $worker): array => [
+                        'number' => (int) $worker['number'],
+                        'status' => in_array($worker['status'], ['active', 'inactive', 'failed', 'activating', 'deactivating', 'unknown'], true) ? $worker['status'] : 'unknown',
+                    ])
+                    ->sortBy('number')
+                    ->values()
+                    ->all();
+
+                return [
+                    'workers' => $workers,
+                    'active_workers' => (int) ($queue['active_workers'] ?? 0),
+                    'configured_workers' => (int) ($queue['configured_workers'] ?? count($workers)),
+                    'tries' => (int) ($queue['tries'] ?? 0),
+                    'timeout' => (int) ($queue['timeout'] ?? 0),
+                ];
+            })
+            ->sortKeys()
+            ->all();
     }
 
     /**

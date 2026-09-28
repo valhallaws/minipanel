@@ -192,6 +192,54 @@ include_reverb_proxy_in_servers() {
   rm -f "$temporary_nginx"
 }
 
+queue_service_status() {
+  local prefix="$1" unit_file unit_name suffix queue worker state tries timeout first='1'
+  local -A queue_workers queue_active_workers queue_configured_workers queue_tries queue_timeouts
+
+  for unit_file in "/etc/systemd/system/${prefix}-"*.service; do
+    [[ -f "$unit_file" && ! -L "$unit_file" ]] || continue
+    unit_name="${unit_file##*/}"
+    suffix="${unit_name#${prefix}-}"
+    [[ "$suffix" =~ ^(.+)-([1-9]|1[0-2])\.service$ ]] || continue
+    queue="${BASH_REMATCH[1]}"
+    worker="${BASH_REMATCH[2]}"
+    state="$(systemctl is-active "$unit_name" 2>/dev/null || true)"
+    case "$state" in
+      active|inactive|failed|activating|deactivating) ;;
+      *) state='unknown' ;;
+    esac
+    tries="$(sed -nE 's/^ExecStart=.*--tries=([0-9]+).*/\1/p' "$unit_file" | tail -n 1)"
+    timeout="$(sed -nE 's/^ExecStart=.*--timeout=([0-9]+).*/\1/p' "$unit_file" | tail -n 1)"
+    queue_workers["$queue"]+="${queue_workers[$queue]:+,}{\"number\":$worker,\"status\":\"$state\"}"
+    (( queue_configured_workers["$queue"] += 1 ))
+    if [[ "$state" == 'active' ]]; then
+      (( queue_active_workers["$queue"] += 1 ))
+    fi
+    queue_tries["$queue"]="${tries:-0}"
+    queue_timeouts["$queue"]="${timeout:-0}"
+  done
+
+  if (( ${#queue_workers[@]} == 0 )); then
+    printf '{}'
+
+    return
+  fi
+
+  printf '{'
+  while IFS= read -r queue; do
+    [[ "$first" == '1' ]] || printf ','
+    first='0'
+    printf '"%s":{"workers":[%s],"active_workers":%s,"configured_workers":%s,"tries":%s,"timeout":%s}' \
+      "$queue" \
+      "${queue_workers[$queue]}" \
+      "${queue_active_workers[$queue]:-0}" \
+      "${queue_configured_workers[$queue]:-0}" \
+      "${queue_tries[$queue]:-0}" \
+      "${queue_timeouts[$queue]:-0}"
+  done < <(printf '%s\n' "${!queue_workers[@]}" | LC_ALL=C sort)
+  printf '}'
+}
+
 configure_reverb_proxy() {
   local temporary_snippet nginx_backup snippet_backup snippet_existed='0'
 
@@ -1107,7 +1155,9 @@ case "$action" in
         active|inactive|failed) ;;
         *) reverb_state='unknown' ;;
       esac
-      printf '{"scheduler":"%s","reverb":"%s"}\n' "$scheduler_state" "$reverb_state"
+      printf '{"scheduler":"%s","reverb":"%s","queues":' "$scheduler_state" "$reverb_state"
+      queue_service_status "$prefix"
+      printf '}\n'
       exit 0
     fi
     exec 8>"/run/lock/minipanel-laravel-${domain}.lock"
@@ -1187,9 +1237,12 @@ EOF
       for worker in $(seq 1 12); do
         unit="${prefix}-${name}-${worker}.service"
         if [[ -f "/etc/systemd/system/$unit" ]]; then
-          systemctl disable --now "$unit"
+          [[ ! -L "/etc/systemd/system/$unit" ]] || fail 'Unexpected service link'
+          systemctl disable --now "$unit" 2>/dev/null || true
+          rm -f "/etc/systemd/system/$unit"
         fi
       done
+      systemctl daemon-reload
       if [[ "$enabled" == 0 ]]; then echo 'Cola deshabilitada.'; exit 0; fi
       for worker in $(seq 1 "$workers"); do
         unit="${prefix}-${name}-${worker}.service"
