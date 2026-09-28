@@ -81,7 +81,7 @@ class RunLaravelCommand implements ShouldQueue
             }
             $this->updateServiceState($site, $parameters, $result->successful(), $output);
             $operation->update(['status' => $result->successful() ? 'finished' : 'failed', 'output' => mb_substr(trim($output) ?: 'Operación completada.', -16000), 'finished_at' => now()]);
-            $this->refreshQueueStatus($operation, $result->successful());
+            $this->refreshQueueStatus($site, $operation, $directory, $result->successful());
         } catch (Throwable $exception) {
             $this->failed($exception);
         }
@@ -124,7 +124,7 @@ class RunLaravelCommand implements ShouldQueue
         ]);
     }
 
-    private function refreshQueueStatus(Deployment $operation, bool $successful): void
+    private function refreshQueueStatus(Site $site, Deployment $operation, string $directory, bool $successful): void
     {
         if (! $successful || ($operation->parameters['service'] ?? null) !== 'queue') {
             return;
@@ -139,11 +139,28 @@ class RunLaravelCommand implements ShouldQueue
                 'service' => 'status',
                 'enabled' => false,
             ],
-            'status' => 'queued',
+            'status' => 'running',
             'output' => 'Actualizando estado de los workers…',
+            'started_at' => now(),
         ]);
 
-        self::dispatch($statusOperation->id);
+        try {
+            $command = ['sudo', '/usr/local/bin/minipanel-agent', 'laravel-service', $site->path, $site->resourceDomain(), '', 'main', $site->php_version, '0', '0', 'static', '', (string) $operation->parameters['repository_id'], $directory, 'status', '0', 'default', '1', '3', '60'];
+            $result = Process::timeout(30)->run($command);
+            $output = trim($result->output()."\n".$result->errorOutput());
+            $this->updateServiceState($site, $statusOperation->parameters, $result->successful(), $output);
+            $statusOperation->update([
+                'status' => $result->successful() ? 'finished' : 'failed',
+                'output' => mb_substr($output ?: 'No se pudo consultar el estado de los workers.', -16000),
+                'finished_at' => now(),
+            ]);
+        } catch (Throwable $exception) {
+            $statusOperation->update([
+                'status' => 'failed',
+                'output' => mb_substr($exception->getMessage(), 0, 8000),
+                'finished_at' => now(),
+            ]);
+        }
     }
 
     public function failed(?Throwable $exception): void

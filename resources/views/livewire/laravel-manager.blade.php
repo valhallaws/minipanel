@@ -82,11 +82,14 @@
         @php($configuredQueueWorkers = collect($queueServices)->sum('configured_workers'))
         <div class="schedule-heading">
             <div><h2>Colas y workers</h2><p class="muted">Cada cola tiene sus propios workers. El estado se consulta directamente desde systemd.</p></div>
-            <span class="schedule-state {{ ! $serviceStatusPending && $serviceInspection && $configuredQueueWorkers > 0 && $activeQueueWorkers === $configuredQueueWorkers ? 'is-active' : 'is-inactive' }}">{{ $serviceStatusPending ? 'Actualizando estado…' : ($serviceInspection ? ($configuredQueueWorkers ? "$activeQueueWorkers de $configuredQueueWorkers workers activos" : 'Sin colas configuradas') : 'Colas sin verificar') }}</span>
+            <span class="schedule-state {{ ! $serviceStatusPending && ! $serviceStatusFailed && $serviceInspection && $configuredQueueWorkers > 0 && $activeQueueWorkers === $configuredQueueWorkers ? 'is-active' : 'is-inactive' }}">{{ $serviceStatusPending ? 'Actualizando estado…' : ($serviceStatusFailed ? 'No se pudo consultar' : ($serviceInspection ? ($configuredQueueWorkers ? "$activeQueueWorkers de $configuredQueueWorkers workers activos" : 'Sin colas configuradas') : 'Colas sin verificar')) }}</span>
         </div>
         <div class="button-row"><button class="secondary" wire:click="serviceStatus" wire:loading.attr="disabled">Actualizar estado</button><button class="secondary" wire:click="queueCommand('queue:restart')" wire:loading.attr="disabled">Reiniciar todos los workers</button><button class="ghost" wire:click="queueCommand('queue:failed')" wire:loading.attr="disabled">Ver jobs fallidos</button></div>
         @if($serviceStatusPending)
             <div class="schedule-empty">Comprobando los workers configurados en el servidor…</div>
+        @elseif($serviceStatusFailed)
+            <div class="schedule-empty">No se pudo comprobar el estado de los workers. Reintenta la consulta o revisa el detalle técnico.</div>
+            <details class="queue-raw"><summary>Ver respuesta técnica del servidor</summary><pre class="laravel-console">{{ $serviceStatusError }}</pre></details>
         @elseif($serviceInspection)
             <p class="schedule-inspected">Estado consultado: {{ $serviceInspection->created_at->format('d/m/Y H:i') }}</p>
             @if(count($queueServices))

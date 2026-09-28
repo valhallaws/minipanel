@@ -186,11 +186,12 @@ class LaravelManagerTest extends TestCase
         Process::assertRan(fn ($process) => in_array('laravel-service', $process->command, true) && in_array('apps/erp', $process->command, true) && in_array('schedule', $process->command, true));
     }
 
-    public function test_queue_change_queues_a_follow_up_worker_status_inspection(): void
+    public function test_queue_change_reads_worker_status_before_finishing(): void
     {
         config()->set('minipanel.execution_enabled', true);
-        Queue::fake([RunLaravelCommand::class]);
-        Process::fake(fn () => Process::result('Cola default activada con 2 worker(s).'));
+        Process::fake(fn ($process) => Process::result(in_array('status', $process->command, true)
+            ? json_encode(['scheduler' => 'active', 'reverb' => 'inactive', 'queues' => ['default' => ['workers' => [], 'active_workers' => 2, 'configured_workers' => 2, 'tries' => 3, 'timeout' => 60]]], JSON_THROW_ON_ERROR)
+            : 'Cola default activada con 2 worker(s).'));
         $repository = $this->repository();
         $operation = Deployment::create([
             'site_id' => $repository->site_id,
@@ -203,9 +204,10 @@ class LaravelManagerTest extends TestCase
 
         $statusOperation = Deployment::where('id', '!=', $operation->id)->sole();
         $this->assertSame('status', $statusOperation->parameters['service']);
-        $this->assertSame('queued', $statusOperation->status);
+        $this->assertSame('finished', $statusOperation->status);
         $this->assertSame($repository->id, $statusOperation->parameters['repository_id']);
-        Queue::assertPushed(RunLaravelCommand::class, fn ($job) => $job->deploymentId === $statusOperation->id);
+        $this->assertStringContainsString('"active_workers":2', $statusOperation->output);
+        Process::assertRan(fn ($process) => in_array('laravel-service', $process->command, true) && in_array('status', $process->command, true));
     }
 
     public function test_reverb_service_receives_project_scope(): void

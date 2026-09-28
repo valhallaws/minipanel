@@ -193,6 +193,8 @@ class LaravelManager extends Component
             'scheduledTasks' => $this->scheduledTasks($scheduleInspection?->output ?? ''),
             'serviceInspection' => $serviceInspection,
             'serviceStatusPending' => in_array($latestServiceStatus?->status, ['queued', 'running'], true),
+            'serviceStatusFailed' => $latestServiceStatus?->status === 'failed',
+            'serviceStatusError' => $latestServiceStatus?->status === 'failed' ? $latestServiceStatus->output : '',
             'queueServices' => $this->queueServices($serviceInspection?->output ?? ''),
         ])->layout('components.layouts.app');
     }
