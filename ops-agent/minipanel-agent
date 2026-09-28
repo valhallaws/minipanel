@@ -210,6 +210,11 @@ queue_service_status() {
     esac
     tries="$(sed -nE 's/^ExecStart=.*--tries=([0-9]+).*/\1/p' "$unit_file" | tail -n 1)"
     timeout="$(sed -nE 's/^ExecStart=.*--timeout=([0-9]+).*/\1/p' "$unit_file" | tail -n 1)"
+    if [[ -z "${queue_configured_workers[$queue]+configured}" ]]; then
+      queue_workers["$queue"]=''
+      queue_active_workers["$queue"]=0
+      queue_configured_workers["$queue"]=0
+    fi
     queue_workers["$queue"]+="${queue_workers[$queue]:+,}{\"number\":$worker,\"status\":\"$state\"}"
     (( queue_configured_workers["$queue"] += 1 ))
     if [[ "$state" == 'active' ]]; then
