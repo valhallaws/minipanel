@@ -91,7 +91,7 @@ if ($action === 'delete-user') {
     $state['databases'] = array_values(array_diff($state['databases'], [$name]));
     $save();
 } elseif ($action === 'import') {
-    if (! is_int($data['size'] ?? null) || $data['size'] < 1 || $data['size'] > 1073741824) {
+    if (! is_int($data['size'] ?? null) || $data['size'] < 1 || $data['size'] > 2147483648) {
         throw new RuntimeException('Invalid SQL');
     }
     if (! in_array($importUser.'@localhost', $state['accounts'], true)) {

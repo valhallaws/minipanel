@@ -8,7 +8,7 @@ use Illuminate\Validation\ValidationException;
 
 class DatabaseUploads
 {
-    public const MAX_BYTES = 1073741824;
+    public const MAX_BYTES = 2147483648;
 
     public function claim(string $token, int $siteId, int $userId): string
     {

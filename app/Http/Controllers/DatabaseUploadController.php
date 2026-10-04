@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Site;
+use App\Services\DatabaseUploads;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -13,7 +14,7 @@ class DatabaseUploadController extends Controller
     public function start(Request $request, Site $site): JsonResponse
     {
         abort_unless($site->status === 'active', 422);
-        $data = $request->validate(['name' => ['required', 'string', 'max:255', 'regex:/\.sql$/i'], 'size' => ['required', 'integer', 'min:1', 'max:1073741824']]);
+        $data = $request->validate(['name' => ['required', 'string', 'max:255', 'regex:/\.sql$/i'], 'size' => ['required', 'integer', 'min:1', 'max:'.DatabaseUploads::MAX_BYTES]]);
         $disk = Storage::disk('local');
         foreach ($disk->files('database-imports') as $file) {
             if (preg_match('/\/[a-f0-9]{32}\.part$/D', $file) && $disk->lastModified($file) < now()->subDay()->timestamp) {

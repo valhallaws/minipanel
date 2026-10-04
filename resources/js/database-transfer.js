@@ -12,8 +12,8 @@ window.databaseTransfer = (wire, startUrl) => ({
         this.ready = false;
         this.progress = 0;
         wire.set('uploadToken', '', false);
-        if (!/\.sql$/i.test(file.name) || file.size < 1 || file.size > 1073741824) {
-            this.error = 'Selecciona un archivo .sql de hasta 1 GB.';
+        if (!/\.sql$/i.test(file.name) || file.size < 1 || file.size > 2147483648) {
+            this.error = 'Selecciona un archivo .sql de hasta 2 GB.';
             return;
         }
         this.uploading = true;

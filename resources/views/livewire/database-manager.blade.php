@@ -43,7 +43,7 @@
                 <label>Archivo SQL<input type="file" x-on:change="upload($event.target.files[0])" :disabled="uploading" accept=".sql" required></label>
                 <div x-show="uploading || ready"><progress max="100" :value="progress"></progress> <span x-text="progress + '% cargado'"></span></div><p x-show="error" x-text="error" role="alert"></p>
                 <p>Al confirmar se ejecutará este SQL en la base seleccionada. Puede reemplazar o eliminar datos existentes; no se crea un respaldo automático.</p>
-                <small>Hasta 1 GB, carga por fragmentos y procesamiento en segundo plano con hasta 2 horas. Solo permisos sobre esta base. Dumps con DEFINER de otro usuario o instrucciones globales pueden fallar.</small>
+                <small>Hasta 2 GB, carga por fragmentos y procesamiento en segundo plano con hasta 2 horas. Solo permisos sobre esta base. Dumps con DEFINER de otro usuario o instrucciones globales pueden fallar.</small>
             @elseif($operationAction === 'export')
                 <p>La descarga del ZIP con el dump .sql iniciará automáticamente al terminar. El ZIP temporal se eliminará al finalizar el envío.</p>
             @elseif($operationAction === 'delete-database')

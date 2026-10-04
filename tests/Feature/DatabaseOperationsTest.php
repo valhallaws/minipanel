@@ -170,14 +170,14 @@ class DatabaseOperationsTest extends TestCase
         return SiteDatabaseOperation::factory()->create(['site_id' => $site->id, 'action' => $action, 'resource_id' => $id, 'resource_name' => $name]);
     }
 
-    public function test_upload_accepts_one_gib_and_rejects_larger_files(): void
+    public function test_upload_accepts_two_gib_and_rejects_larger_files(): void
     {
         Storage::fake('local');
         $site = $this->site();
         $this->actingAs(User::factory()->create());
 
-        $this->postJson(route('sites.database-uploads.start', $site), ['name' => 'large.sql', 'size' => 1073741824])->assertOk();
-        $this->postJson(route('sites.database-uploads.start', $site), ['name' => 'large.sql', 'size' => 1073741825])->assertUnprocessable();
+        $this->postJson(route('sites.database-uploads.start', $site), ['name' => 'large.sql', 'size' => 2147483648])->assertOk();
+        $this->postJson(route('sites.database-uploads.start', $site), ['name' => 'large.sql', 'size' => 2147483649])->assertUnprocessable();
     }
 
     public function test_chunks_are_ordered_owned_and_incomplete_upload_cannot_be_claimed(): void
