@@ -13,7 +13,7 @@ class Site extends Model
 
     protected $attributes = [
         'backup_enabled' => true,
-        'backup_retention' => 14,
+        'backup_retention' => 3,
     ];
 
     protected $fillable = [

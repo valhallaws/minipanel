@@ -19,7 +19,7 @@ class BackupManager extends Component
 
     public bool $backupEnabled = true;
 
-    public int $backupRetention = 14;
+    public int $backupRetention = 3;
 
     public function mount(Site $site): void
     {

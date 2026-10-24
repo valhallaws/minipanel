@@ -27,6 +27,7 @@ class ScheduledBackupsTest extends TestCase
         $this->artisan('minipanel:run-scheduled-backups')->assertSuccessful();
 
         $backup = Deployment::query()->where('site_id', $eligible->id)->sole();
+        $this->assertSame(3, $eligible->backup_retention);
         $this->assertSame('backup', $backup->action);
         $this->assertSame('queued', $backup->status);
         $this->assertSame(['scheduled' => true], $backup->parameters);
