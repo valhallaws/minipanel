@@ -16,7 +16,7 @@
         <div class="section-title"><div><h2>Estado del VPS</h2><p wire:loading.remove wire:target="refreshServerStatus">Consulta manual disponible.</p><p wire:loading wire:target="refreshServerStatus">Leyendo el VPS…</p></div><button class="secondary" wire:click="refreshServerStatus">Actualizar</button></div>
         @if($serverStatus)
             <div class="server-health-summary">
-                <div><span class="dot {{ $activeServices === count($services) ? 'finished' : 'failed' }}"></span><div><strong>{{ $activeServices === count($services) ? 'Servidor en orden' : 'Requiere atención' }}</strong><p>{{ $activeServices }}/{{ count($services) }} servicios esenciales activos</p></div></div>
+                <div><span @class(['dot', 'server-health-dot', 'is-healthy' => $activeServices === count($services), 'is-unhealthy' => $activeServices !== count($services)])></span><div><strong>{{ $activeServices === count($services) ? 'Servidor en orden' : 'Requiere atención' }}</strong><p>{{ $activeServices }}/{{ count($services) }} servicios esenciales activos</p></div></div>
                 <dl><div><dt>Sistema</dt><dd>{{ $serverStatus['Sistema'] ?? '—' }}</dd></div><div><dt>Uptime</dt><dd>{{ $serverStatus['Uptime'] ?? '—' }}</dd></div></dl>
             </div>
             <details class="server-technical-details"><summary>Ver detalle técnico</summary><dl><div><dt>Hostname</dt><dd>{{ $serverStatus['Hostname'] ?? '—' }}</dd></div><div><dt>Hora</dt><dd>{{ $serverStatus['Hora'] ?? '—' }}</dd></div><div><dt>Zona horaria</dt><dd>{{ $serverStatus['Zona horaria'] ?? '—' }}</dd></div><div><dt>NTP</dt><dd>{{ $serverStatus['NTP'] ?? '—' }}</dd></div></dl></details>
