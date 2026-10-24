@@ -237,6 +237,7 @@ class ServerTimezonesTest extends TestCase
         Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
             ->call('loadServiceLogs', 'nginx')
             ->assertHasNoErrors()
+            ->assertSee('Resultado reciente')
             ->assertSee('nginx started');
 
         Process::assertRan(fn ($process) => $process->command === ['sudo', '/usr/local/bin/minipanel-agent', 'server-service-log', 'nginx']);

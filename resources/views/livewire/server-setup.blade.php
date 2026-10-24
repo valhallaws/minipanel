@@ -88,7 +88,7 @@
     </section>
     <section class="panel danger-zone"><div class="section-title"><div><h2>Reiniciar VPS</h2><p class="muted">Corta brevemente todos los sitios, conexiones y colas. Freyja volverá al terminar el arranque.</p></div><button class="danger-button" wire:click="prepareServerAction('reboot')">Reiniciar VPS</button></div></section>
     @endif
-    @if($serverOutput)<section class="panel"><h2>Resultado</h2><pre class="laravel-console">{{ $serverOutput }}</pre></section>@endif
+    @if($serverOutput)<details class="panel server-output"><summary><span>Resultado reciente</span><small>Ver salida del agente</small></summary><pre class="laravel-console">{{ $serverOutput }}</pre></details>@endif
     @if($confirmServerAction)
         <dialog class="git-dialog" wire:ignore.self x-data x-init="$el.showModal()" @cancel.prevent="$wire.set('confirmServerAction', false)">
             <h2>
