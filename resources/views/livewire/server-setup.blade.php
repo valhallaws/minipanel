@@ -2,7 +2,7 @@
     <section class="hero server-hero"><div><p class="eyebrow">CENTRO DE CONTROL DEL VPS</p><h1>Servidor</h1><p class="muted">Salud, seguridad y configuración del host.</p></div><a class="ghost" href="{{ route('server.terminal') }}">Consola root ↗</a></section>
     <nav class="server-index" aria-label="Áreas de administración del servidor">
         <button wire:click="selectServerSection('overview')" @class(['selected' => $serverSection === 'overview'])><strong>General</strong><span>Hostname, hora y zona</span></button>
-        <button wire:click="selectServerSection('security')" @class(['selected' => $serverSection === 'security'])><strong>Seguridad</strong><span>Firewall, Fail2ban y SSH</span></button>
+        <button wire:click="selectServerSection('security')" @class(['selected' => $serverSection === 'security'])><strong>Seguridad</strong><span>Firewall, SSH y alertas</span></button>
         <button wire:click="selectServerSection('services')" @class(['selected' => $serverSection === 'services'])><strong>Servicios y recursos</strong><span>Nginx, PHP, MariaDB y workers</span></button>
         <button wire:click="selectServerSection('applications')" @class(['selected' => $serverSection === 'applications'])><strong>Aplicaciones y bases</strong><span>Freyja y MariaDB</span></button>
         <button wire:click="selectServerSection('dns')" @class(['selected' => $serverSection === 'dns'])><strong>DNS y certificados</strong><span>Infraestructura y wildcard</span></button>
@@ -45,6 +45,19 @@
         <section class="security-rules-form security-ssh-keys"><div><h3>Llaves SSH autorizadas</h3><p class="muted">Se administran las llaves del usuario {{ $securityStatus['SSH usuario'] ?? 'administrador' }}. La última llave no se puede eliminar.</p>@if($this->sshKeys())<details><summary>Ver huellas</summary><dl>@foreach($this->sshKeys() as $number => $fingerprint)<div wire:key="ssh-key-{{ $number }}"><dt>#{{ $number }}</dt><dd>{{ $fingerprint }}</dd></div>@endforeach</dl></details>@endif</div><form wire:submit="prepareSshKeyAdd" class="stack"><label>Llave pública<textarea wire:model="sshPublicKey" rows="3" placeholder="ssh-ed25519 AAAA… nombre@equipo"></textarea></label><div class="button-row"><button class="secondary">Preparar llave</button></div></form>@error('sshPublicKey')<p class="error">{{ $message }}</p>@enderror</section>
         @if($this->sshKeys())<section class="security-rules-form security-delete"><div><h3>Eliminar llave SSH</h3><p class="muted">La última llave siempre queda protegida para no perder acceso.</p></div><form wire:submit="prepareSshKeyDelete" class="form-grid"><label>Número de llave<select wire:model="sshKeyNumber"><option value="">Selecciona…</option>@foreach($this->sshKeys() as $number => $fingerprint)<option value="{{ $number }}">#{{ $number }}</option>@endforeach</select></label><div class="form-actions"><button class="ghost">Preparar eliminación</button></div></form>@error('sshKeyNumber')<p class="error">{{ $message }}</p>@enderror</section>@endif
         </div>
+        <section class="security-rules-form telegram-settings">
+            <div><h3>Alertas por Telegram</h3><p class="muted">Freyja avisa una sola vez cuando un sitio cae en dos comprobaciones seguidas, falla su respaldo o su certificado vence en 21 días. El token se guarda cifrado y nunca vuelve a mostrarse.</p></div>
+            @if(session('telegramNotice'))<p class="notice" role="status">{{ session('telegramNotice') }}</p>@endif
+            <form wire:submit="saveTelegramSettings" class="form-grid">
+                <label class="checkbox-label"><input wire:model="telegramEnabled" type="checkbox"> Activar alertas por Telegram</label>
+                <label>Chat ID<input wire:model="telegramChatId" autocomplete="off" placeholder="123456789 o -1001234567890"><small>Abre conversación con el bot antes de enviar la prueba.</small></label>
+                <label>Token del bot<input wire:model="telegramBotToken" type="password" autocomplete="new-password" placeholder="{{ $telegramTokenConfigured ? 'Configurado; déjalo vacío para conservarlo' : '123456789:ABC...' }}"><small>{{ $telegramTokenConfigured ? 'Hay un token guardado cifrado.' : 'Créalo con @BotFather en Telegram.' }}</small></label>
+                <div class="form-actions"><button class="secondary" wire:loading.attr="disabled" wire:target="saveTelegramSettings">Guardar alertas</button><button type="button" class="ghost" wire:click="sendTelegramTest" wire:loading.attr="disabled" wire:target="sendTelegramTest">Enviar prueba</button></div>
+            </form>
+            @error('telegram')<p class="error" role="alert">{{ $message }}</p>@enderror
+            @error('telegramChatId')<p class="error" role="alert">{{ $message }}</p>@enderror
+            @error('telegramBotToken')<p class="error" role="alert">{{ $message }}</p>@enderror
+        </section>
         <div class="button-row security-actions"><button class="ghost" wire:click="prepareServerAction('firewall-reload')">Recargar UFW</button><button class="ghost" wire:click="prepareServerAction('fail2ban-reload')">Recargar Fail2ban</button><button class="secondary" wire:click="prepareServerAction('system-update')">Instalar actualizaciones</button></div>
         <p class="muted">Las actualizaciones se ejecutan en segundo plano para no cortar esta sesión. Si el sistema indica que requiere reinicio, podrás hacerlo desde Mantenimiento.</p>
     </section>

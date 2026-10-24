@@ -7,6 +7,7 @@ use App\Models\ServerDatabaseUser;
 use App\Models\ServerSetting;
 use App\Services\AuditLogger;
 use App\Services\ServerDatabases;
+use App\Services\TelegramNotifier;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Validation\Rule;
@@ -67,6 +68,14 @@ class ServerSetup extends Component
     public string $panelEnvironment = '';
 
     public string $panelEnvironmentOutput = '';
+
+    public bool $telegramEnabled = false;
+
+    public string $telegramBotToken = '';
+
+    public string $telegramChatId = '';
+
+    public bool $telegramTokenConfigured = false;
 
     public function selectServerSection(string $section): void
     {
@@ -194,6 +203,69 @@ class ServerSetup extends Component
         } catch (\Throwable) {
             $this->addError('security', 'No se pudo contactar al agente de seguridad.');
         }
+    }
+
+    public function saveTelegramSettings(): void
+    {
+        abort_unless(Auth::check(), 403);
+        $settings = ServerSetting::query()->first();
+        if (! $settings) {
+            $this->addError('telegram', 'Primero guarda la configuración base de Freyja.');
+
+            return;
+        }
+
+        $this->resetErrorBag('telegram');
+        $this->validate([
+            'telegramEnabled' => ['boolean'],
+            'telegramChatId' => ['nullable', 'string', 'max:64', Rule::requiredIf($this->telegramEnabled)],
+            'telegramBotToken' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::requiredIf($this->telegramEnabled && ! $this->telegramTokenConfigured),
+                'regex:/^\d{6,12}:[A-Za-z0-9_-]{20,}$/',
+            ],
+        ], [
+            'telegramChatId.required' => 'Indica el chat ID que recibirá las alertas.',
+            'telegramBotToken.required' => 'Indica el token del bot de Telegram.',
+            'telegramBotToken.regex' => 'El token del bot no parece válido.',
+        ]);
+
+        $changes = [
+            'telegram_enabled' => $this->telegramEnabled,
+            'telegram_chat_id' => filled($this->telegramChatId) ? trim($this->telegramChatId) : null,
+        ];
+        if (filled($this->telegramBotToken)) {
+            $changes['telegram_bot_token'] = trim($this->telegramBotToken);
+        }
+        $settings->update($changes);
+        $this->telegramBotToken = '';
+        $this->telegramTokenConfigured = filled($settings->fresh()->telegram_bot_token);
+        app(AuditLogger::class)->record('notifications.telegram.saved', $settings, ['enabled' => $this->telegramEnabled]);
+        session()->flash('telegramNotice', $this->telegramEnabled
+            ? 'Telegram está configurado. Usa “Enviar prueba” para comprobar el chat antes de esperar una alerta.'
+            : 'Las alertas de Telegram quedaron pausadas. La configuración se conserva cifrada.');
+    }
+
+    public function sendTelegramTest(): void
+    {
+        abort_unless(Auth::check(), 403);
+        $this->resetErrorBag('telegram');
+        if (! app(TelegramNotifier::class)->configured()) {
+            $this->addError('telegram', 'Guarda y activa un token y chat ID de Telegram antes de enviar una prueba.');
+
+            return;
+        }
+
+        if (! app(TelegramNotifier::class)->send('✅ Freyja está listo para avisarte desde este VPS.')) {
+            $this->addError('telegram', 'Telegram no aceptó la prueba. Revisa el token, el chat ID y que hayas iniciado conversación con el bot.');
+
+            return;
+        }
+
+        app(AuditLogger::class)->record('notifications.telegram.tested');
+        session()->flash('telegramNotice', 'Prueba enviada. Revisa el chat de Telegram.');
     }
 
     public function loadServiceLogs(string $service): void
@@ -535,6 +607,9 @@ class ServerSetup extends Component
             $this->host = $settings->db_host;
             $this->port = (string) $settings->db_port;
             $this->username = $settings->db_username;
+            $this->telegramEnabled = $settings->telegram_enabled;
+            $this->telegramChatId = $settings->telegram_chat_id ?? '';
+            $this->telegramTokenConfigured = filled($settings->telegram_bot_token);
         }
     }
 

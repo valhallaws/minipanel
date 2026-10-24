@@ -106,6 +106,11 @@ class Site extends Model
         return $this->hasMany(SiteHealthCheck::class);
     }
 
+    public function alerts(): HasMany
+    {
+        return $this->hasMany(SiteAlert::class);
+    }
+
     public function fileOperations(): HasMany
     {
         return $this->hasMany(SiteFileOperation::class);

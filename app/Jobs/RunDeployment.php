@@ -6,6 +6,7 @@ use App\Models\Deployment;
 use App\Models\ServerSetting;
 use App\Models\Site;
 use App\Models\SiteQueue;
+use App\Services\SiteAlertNotifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -109,6 +110,9 @@ class RunDeployment implements ShouldQueue
         }
         if ($deployment->action === 'backup' && $result->successful()) {
             $site->update(['last_backup_at' => now(), 'last_backup_path' => trim($result->output())]);
+        }
+        if ($deployment->action === 'backup') {
+            app(SiteAlertNotifier::class)->synchronizeBackup($site, $result->successful(), $output);
         }
         if ($deployment->action === 'verify-backup' && $result->successful()) {
             $site->update(['backup_last_verified_at' => now()]);
@@ -241,6 +245,8 @@ class RunDeployment implements ShouldQueue
             'health_checked_at' => now(),
             'ssl_expires_at' => $sslExpiresAt === false ? null : now()->setTimestamp($sslExpiresAt),
         ]);
+        $site->refresh();
+        app(SiteAlertNotifier::class)->synchronizeHealth($site);
 
         $summary = 'Disponibilidad: '.match ($status) {
             'healthy' => 'activa',
