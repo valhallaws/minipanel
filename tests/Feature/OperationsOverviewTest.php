@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Livewire\ServerHealth;
 use App\Models\Deployment;
 use App\Models\Site;
+use App\Models\SiteHealthCheck;
 use App\Models\User;
 use App\Services\ServerReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -63,6 +64,36 @@ class OperationsOverviewTest extends TestCase
             ->where('status', '!=', 'ok')
             ->all());
         $this->assertSame('Habilitada: el agente puede hacer cambios', collect($checks)->firstWhere('name', 'Ejecución administrativa')['detail']);
+    }
+
+    public function test_server_health_alerts_after_two_failed_checks_and_for_expiring_certificates(): void
+    {
+        Process::fake();
+        $user = User::factory()->create();
+        $failed = $this->site('offline.example.test');
+        $degraded = $this->site('slow.example.test');
+        $certificate = $this->site('certificate.example.test');
+        $singleFailure = $this->site('one-failure.example.test');
+        foreach ([$failed, $degraded, $certificate, $singleFailure] as $site) {
+            $site->update(['last_backup_at' => now()]);
+        }
+
+        foreach ([now()->subMinutes(10), now()] as $checkedAt) {
+            SiteHealthCheck::create(['site_id' => $failed->id, 'status' => 'failed', 'error' => 'No se pudo conectar.', 'checked_at' => $checkedAt]);
+        }
+        $failed->update(['health_status' => 'failed', 'health_checked_at' => now()]);
+        $degraded->update(['health_status' => 'degraded', 'health_checked_at' => now()]);
+        $certificate->update(['ssl_enabled' => true, 'ssl_expires_at' => now()->addDays(10)]);
+        SiteHealthCheck::create(['site_id' => $singleFailure->id, 'status' => 'failed', 'error' => 'No se pudo conectar.', 'checked_at' => now()]);
+        $singleFailure->update(['health_status' => 'failed', 'health_checked_at' => now()]);
+
+        Livewire::actingAs($user)->test(ServerHealth::class)
+            ->assertSee('Disponibilidad')
+            ->assertSee('offline.example.test')
+            ->assertSee('slow.example.test')
+            ->assertDontSee('one-failure.example.test')
+            ->assertSee('Certificados')
+            ->assertSee('certificate.example.test');
     }
 
     private function site(string $domain): Site

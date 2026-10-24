@@ -13,6 +13,7 @@
                 <article @class(['needs-attention' => count($operations['lifecycle'] ?? []) > 0])><strong>{{ count($operations['lifecycle'] ?? []) }}</strong><span>Ciclo de vida</span></article>
                 <article @class(['needs-attention' => count($operations['backups'] ?? []) > 0])><strong>{{ count($operations['backups'] ?? []) }}</strong><span>Respaldos</span></article>
                 <article @class(['needs-attention' => count($operations['availability'] ?? []) > 0])><strong>{{ count($operations['availability'] ?? []) }}</strong><span>Disponibilidad</span></article>
+                <article @class(['needs-attention' => count($operations['certificates'] ?? []) > 0])><strong>{{ count($operations['certificates'] ?? []) }}</strong><span>Certificados</span></article>
             </div>
         </section>
     </section>
@@ -24,6 +25,7 @@
             <section><h3>Error de ciclo de vida</h3>@forelse($operations['lifecycle'] ?? [] as $site)<div class="operation-row"><span class="dot failed"></span><div><strong><a href="{{ route('dashboard') }}">{{ $site->domain }}</a></strong><p>{{ str($site->lifecycle_error)->squish()->limit(130) }}</p></div></div>@empty<p class="muted">No hay dominios detenidos.</p>@endforelse</section>
             <section><h3>Respaldo pendiente</h3>@forelse($operations['backups'] ?? [] as $site)<div class="operation-row"><span class="dot failed"></span><div><strong><a href="{{ route('sites.backups', $site) }}">{{ $site->domain }}</a></strong><p>{{ $site->last_backup_at ? 'Último: '.$site->last_backup_at->diffForHumans() : 'Aún no tiene un respaldo.' }}</p></div></div>@empty<p class="muted">Todos los sitios activos tienen respaldo reciente.</p>@endforelse</section>
             <section><h3>Disponibilidad</h3>@forelse($operations['availability'] ?? [] as $site)<div class="operation-row"><span class="dot failed"></span><div><strong><a href="{{ route('sites.show', $site) }}">{{ $site->domain }}</a></strong><p>{{ $site->health_status === 'degraded' ? 'Respuesta lenta' : ($site->health_status === 'failed' ? 'Sin respuesta' : 'Sin comprobación reciente') }}{{ $site->health_checked_at ? ' · '.$site->health_checked_at->diffForHumans() : '' }}</p></div></div>@empty<p class="muted">Los sitios comprobados responden normalmente.</p>@endforelse</section>
+            <section><h3>Certificados por revisar</h3>@forelse($operations['certificates'] ?? [] as $site)<div class="operation-row"><span class="dot failed"></span><div><strong><a href="{{ route('sites.ssl', $site) }}">{{ $site->domain }}</a></strong><p>Vence {{ $site->ssl_expires_at->diffForHumans() }}</p></div></div>@empty<p class="muted">No hay certificados próximos a vencer.</p>@endforelse</section>
         </div>
     </section>
 </div>

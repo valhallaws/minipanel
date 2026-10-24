@@ -220,6 +220,7 @@ class RunDeployment implements ShouldQueue
             : 'failed';
         $statusCode = filter_var($result['status_code'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 100, 'max_range' => 599]]);
         $responseTime = filter_var($result['response_time_ms'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        $sslExpiresAt = filter_var($result['ssl_expires_at'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
         $error = is_array($result) && is_string($result['error'] ?? null) && $result['error'] !== ''
             ? str($result['error'])->limit(255)->toString()
             : null;
@@ -235,7 +236,11 @@ class RunDeployment implements ShouldQueue
             'error' => $error,
             'checked_at' => now(),
         ]);
-        $site->update(['health_status' => $status, 'health_checked_at' => now()]);
+        $site->update([
+            'health_status' => $status,
+            'health_checked_at' => now(),
+            'ssl_expires_at' => $sslExpiresAt === false ? null : now()->setTimestamp($sslExpiresAt),
+        ]);
 
         $summary = 'Disponibilidad: '.match ($status) {
             'healthy' => 'activa',

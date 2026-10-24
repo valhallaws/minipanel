@@ -24,6 +24,9 @@
                         Se revisará automáticamente cuando corra el monitor.
                     @endif
                 </p>
+                @if($site->ssl_enabled)
+                    <p class="monitor-certificate">SSL: {{ $site->ssl_expires_at ? 'vence '.$site->ssl_expires_at->diffForHumans() : 'pendiente de detectar' }}</p>
+                @endif
             </div>
         </div>
 

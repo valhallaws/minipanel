@@ -39,7 +39,8 @@ class SiteHealthMonitoringTest extends TestCase
     public function test_successful_health_check_records_the_http_code_latency_and_site_status(): void
     {
         config()->set('minipanel.execution_enabled', true);
-        Process::fake(fn () => Process::result('{"status":"healthy","status_code":200,"response_time_ms":143,"error":""}'));
+        $sslExpiration = now()->addDays(90)->timestamp;
+        Process::fake(fn () => Process::result('{"status":"healthy","status_code":200,"response_time_ms":143,"ssl_expires_at":'.$sslExpiration.',"error":""}'));
         $site = $this->site('healthy.example.test');
         $deployment = Deployment::create([
             'site_id' => $site->id,
@@ -58,6 +59,7 @@ class SiteHealthMonitoringTest extends TestCase
         ]);
         $this->assertSame('healthy', $site->fresh()->health_status);
         $this->assertNotNull($site->fresh()->health_checked_at);
+        $this->assertSame($sslExpiration, $site->fresh()->ssl_expires_at?->timestamp);
         $this->assertSame('finished', $deployment->fresh()->status);
         $this->assertStringContainsString('HTTP 200', $deployment->fresh()->output);
     }

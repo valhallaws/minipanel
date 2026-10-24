@@ -21,7 +21,7 @@ class Site extends Model
         'parent_site_id',
         'document_root', 'hosting_limits', 'ssl_auto_renew',
         'name', 'domain', 'repository', 'deploy_key_public', 'webhook_token', 'webhook_secret', 'branch', 'path', 'php_version', 'node_version', 'php_extensions', 'status',
-        'ssl_enabled', 'queue_enabled', 'scheduler_enabled', 'last_deployed_at', 'runtime',
+        'ssl_enabled', 'ssl_expires_at', 'queue_enabled', 'scheduler_enabled', 'last_deployed_at', 'runtime',
         'artisan_commands', 'npm_scripts', 'environment', 'deploy_commands', 'nginx_config', 'last_inspected_at', 'queue_status', 'scheduler_status',
         'aliases', 'health_url', 'health_status', 'dns_results', 'dns_checked_at', 'health_checked_at', 'last_backup_at', 'last_backup_path', 'backup_enabled', 'backup_retention', 'backup_last_verified_at', 'current_commit', 'previous_commit', 'last_webhook_at',
     ];
@@ -32,6 +32,7 @@ class Site extends Model
             'purge_after' => 'datetime',
             'ssl_enabled' => 'boolean',
             'ssl_auto_renew' => 'boolean',
+            'ssl_expires_at' => 'datetime',
             'queue_enabled' => 'boolean',
             'scheduler_enabled' => 'boolean',
             'last_deployed_at' => 'datetime',

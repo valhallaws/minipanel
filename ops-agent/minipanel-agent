@@ -1718,7 +1718,22 @@ EOF
       health_status='failed'
       health_error="El sitio respondió HTTP $health_status_code."
     fi
-    printf '{"status":"%s","status_code":%s,"response_time_ms":%s,"error":"%s"}\n' "$health_status" "$health_status_code" "$health_latency_ms" "$health_error"
+    ssl_expires_at='null'
+    if [[ "$health_url" == https://* ]] && command -v openssl >/dev/null && command -v timeout >/dev/null; then
+      health_target="${health_url#https://}"
+      health_authority="${health_target%%[/?#]*}"
+      health_host="${health_authority%%:*}"
+      health_port='443'
+      if [[ "$health_authority" == *:* ]]; then
+        health_port="${health_authority##*:}"
+      fi
+      ssl_end_date="$(timeout 8 openssl s_client -connect "${health_host}:${health_port}" -servername "$health_host" < /dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null || true)"
+      if [[ "$ssl_end_date" =~ ^notAfter=(.+)$ ]]; then
+        ssl_expires_at="$(date -d "${BASH_REMATCH[1]}" +%s 2>/dev/null || true)"
+        [[ "$ssl_expires_at" =~ ^[0-9]+$ ]] || ssl_expires_at='null'
+      fi
+    fi
+    printf '{"status":"%s","status_code":%s,"response_time_ms":%s,"ssl_expires_at":%s,"error":"%s"}\n' "$health_status" "$health_status_code" "$health_latency_ms" "$ssl_expires_at" "$health_error"
     ;;
   dns-check)
     command -v dig >/dev/null || { echo 'Install dnsutils to use DNS propagation checks.' >&2; exit 69; }
