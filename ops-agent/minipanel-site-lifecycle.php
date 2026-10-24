@@ -79,12 +79,12 @@ final class MiniPanelSiteLifecycle
     private function ownedDatabases(): array
     {
         $registry = '/etc/minipanel/database-state/'.$this->domain.'.json';
-        $state = is_file($registry) ? json_decode(file_get_contents($registry), true, flags: JSON_THROW_ON_ERROR) : ['databases' => [], 'accounts' => []];
+        $state = $this->databaseRegistry($registry);
         foreach (glob('/etc/minipanel/database-state/*.json') ?: [] as $otherPath) {
             if ($otherPath === $registry) {
                 continue;
             }
-            $other = json_decode(file_get_contents($otherPath), true, flags: JSON_THROW_ON_ERROR);
+            $other = $this->databaseRegistry($otherPath);
             if (array_intersect($state['databases'], $other['databases']) || array_intersect($state['accounts'], $other['accounts'])) {
                 throw new RuntimeException('Shared database resources require manual review');
             }
@@ -132,6 +132,20 @@ final class MiniPanelSiteLifecycle
         }
 
         return $state;
+    }
+
+    private function databaseRegistry(string $path): array
+    {
+        if (! is_file($path)) {
+            return ['databases' => [], 'accounts' => []];
+        }
+
+        $registry = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+        return [
+            'databases' => is_array($registry['databases'] ?? null) ? $registry['databases'] : [],
+            'accounts' => is_array($registry['accounts'] ?? null) ? $registry['accounts'] : [],
+        ];
     }
 
     private function accountSql(string $key): string
