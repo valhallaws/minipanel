@@ -404,6 +404,7 @@ class ServerSetup extends Component
     public function saveDnsSettings(): void
     {
         abort_unless(Auth::check(), 403);
+        $this->serverSection = 'dns';
         $this->dnsDomain = strtolower(trim($this->dnsDomain));
         foreach ($this->dnsNameservers as &$server) {
             if (is_array($server) && is_string($server['hostname'] ?? null)) {

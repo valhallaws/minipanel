@@ -38,11 +38,13 @@
                 <article class="security-card"><header><div><h3>Actualizaciones</h3><p>Se instalan en segundo plano.</p></div><span class="security-state">{{ $securityStatus['Actualizaciones pendientes'] ?? '—' }} pendientes</span></header><dl><div><dt>Proceso</dt><dd>{{ $securityStatus['Actualización del sistema'] ?? '—' }}</dd></div></dl></article>
             </div>
         @else<p class="muted">Leyendo configuración de seguridad…</p>@endif
+        <div class="security-operations-grid">
         <section class="security-rules-form"><div><h3>Permitir acceso</h3><p class="muted">Abre un puerto. Deja el origen vacío sólo si el servicio debe ser público.</p></div><form wire:submit="prepareFirewallAllow" class="form-grid"><label>Puerto<input wire:model="firewallPort" type="number" min="1" max="65535" placeholder="3306"></label><label>Protocolo<select wire:model="firewallProtocol"><option value="tcp">TCP</option><option value="udp">UDP</option></select></label><label>Origen <small>(IP o CIDR)</small><input wire:model="firewallSource" placeholder="203.0.113.10 o 203.0.113.0/24"></label><div class="form-actions"><button class="secondary">Preparar regla</button></div></form>@error('firewallPort')<p class="error">{{ $message }}</p>@enderror @error('firewallSource')<p class="error">{{ $message }}</p>@enderror</section>
         <section class="security-rules-form security-delete"><div><h3>Eliminar regla</h3><p class="muted">Usa el número que aparece en “Ver reglas públicas”.</p></div><form wire:submit="prepareFirewallDelete" class="form-grid"><label>Número de regla<input wire:model="firewallRuleNumber" type="number" min="1" max="999" placeholder="3"></label><div class="form-actions"><button class="ghost">Preparar eliminación</button></div></form>@error('firewallRuleNumber')<p class="error">{{ $message }}</p>@enderror</section>
         <section class="security-rules-form security-delete"><div><h3>Desbloquear IP</h3><p class="muted">Quita una IP bloqueada de un jail activo de Fail2ban.</p></div><form wire:submit="prepareFail2banUnban" class="form-grid"><label>Jail<select wire:model="fail2banJail"><option value="">Selecciona…</option>@foreach($this->fail2banJails() as $jail)<option value="{{ $jail }}">{{ $jail }}</option>@endforeach</select></label><label>IP<input wire:model="fail2banIp" placeholder="203.0.113.10"></label><div class="form-actions"><button class="ghost">Preparar desbloqueo</button></div></form>@error('fail2banJail')<p class="error">{{ $message }}</p>@enderror @error('fail2banIp')<p class="error">{{ $message }}</p>@enderror</section>
         <section class="security-rules-form security-ssh-keys"><div><h3>Llaves SSH autorizadas</h3><p class="muted">Se administran las llaves del usuario {{ $securityStatus['SSH usuario'] ?? 'administrador' }}. La última llave no se puede eliminar.</p>@if($this->sshKeys())<details><summary>Ver huellas</summary><dl>@foreach($this->sshKeys() as $number => $fingerprint)<div wire:key="ssh-key-{{ $number }}"><dt>#{{ $number }}</dt><dd>{{ $fingerprint }}</dd></div>@endforeach</dl></details>@endif</div><form wire:submit="prepareSshKeyAdd" class="stack"><label>Llave pública<textarea wire:model="sshPublicKey" rows="3" placeholder="ssh-ed25519 AAAA… nombre@equipo"></textarea></label><div class="button-row"><button class="secondary">Preparar llave</button></div></form>@error('sshPublicKey')<p class="error">{{ $message }}</p>@enderror</section>
         @if($this->sshKeys())<section class="security-rules-form security-delete"><div><h3>Eliminar llave SSH</h3><p class="muted">La última llave siempre queda protegida para no perder acceso.</p></div><form wire:submit="prepareSshKeyDelete" class="form-grid"><label>Número de llave<select wire:model="sshKeyNumber"><option value="">Selecciona…</option>@foreach($this->sshKeys() as $number => $fingerprint)<option value="{{ $number }}">#{{ $number }}</option>@endforeach</select></label><div class="form-actions"><button class="ghost">Preparar eliminación</button></div></form>@error('sshKeyNumber')<p class="error">{{ $message }}</p>@enderror</section>@endif
+        </div>
         <div class="button-row security-actions"><button class="ghost" wire:click="prepareServerAction('firewall-reload')">Recargar UFW</button><button class="ghost" wire:click="prepareServerAction('fail2ban-reload')">Recargar Fail2ban</button><button class="secondary" wire:click="prepareServerAction('system-update')">Instalar actualizaciones</button></div>
         <p class="muted">Las actualizaciones se ejecutan en segundo plano para no cortar esta sesión. Si el sistema indica que requiere reinicio, podrás hacerlo desde Mantenimiento.</p>
     </section>
@@ -70,6 +72,7 @@
     </section>
     @endif
     @if($serverSection === 'maintenance')
+    <div class="server-maintenance-grid">
     <section class="panel" id="maintenance">
         <div class="section-title"><div><h2>Actualizar Freyja</h2><p class="muted">Descarga la rama actual del panel, reinstala dependencias, ejecuta migraciones y recompila la interfaz. Los sitios hospedados no se modifican.</p></div><div class="button-row"><button class="ghost" wire:click="refreshPanelUpdateStatus" wire:loading.attr="disabled" wire:target="refreshPanelUpdateStatus">Actualizar estado</button><button class="secondary" wire:click="prepareServerAction('panel-update')">Actualizar desde Git</button></div></div>
         <dl class="mt-5 grid gap-3 sm:grid-cols-3">
@@ -90,6 +93,7 @@
         </div>
     </section>
     <section class="panel danger-zone"><div class="section-title"><div><h2>Reiniciar VPS</h2><p class="muted">Corta brevemente todos los sitios, conexiones y colas. Freyja volverá al terminar el arranque.</p></div><button class="danger-button" wire:click="prepareServerAction('reboot')">Reiniciar VPS</button></div></section>
+    </div>
     @endif
     @if($serverOutput)<details class="panel server-output"><summary><span>Resultado reciente</span><small>Ver salida del agente</small></summary><pre class="laravel-console">{{ $serverOutput }}</pre></details>@endif
     @if($confirmServerAction)
@@ -177,6 +181,8 @@
     @if($serverSection === 'applications')
     <section class="panel" id="applications">
         <h2>Aplicaciones y bases de datos</h2>
+        <div class="applications-tools-grid">
+        <section class="server-subsection">
         <h3>DBA global</h3>
         <p class="muted">Cuenta de administración para todas las bases del VPS. DataGrip debe conectarse mediante túnel SSH al VPS y usar <code>127.0.0.1:3306</code>; no abre MariaDB al internet ni depende de tu IP actual.</p>
         @if(session('globalDbaNotice'))<p class="notice" role="status">{{ session('globalDbaNotice') }}</p>@endif
@@ -194,12 +200,16 @@
         @if($editingGlobalDbaId)
             <form wire:submit="rotateGlobalDbaPassword" class="form-grid"><label>Nueva contraseña DBA<input wire:model="globalDbaPassword" type="password" autocomplete="new-password"><small>Mínimo 12 caracteres. Se aplicará inmediatamente en MariaDB.</small></label><div class="form-actions"><button class="secondary" wire:loading.attr="disabled" wire:target="rotateGlobalDbaPassword">Actualizar contraseña</button><button type="button" class="ghost" wire:click="$set('editingGlobalDbaId', null)">Cancelar</button></div>@error('globalDbaPassword')<p class="error" role="alert">{{ $message }}</p>@enderror</form>
         @endif
+        </section>
+        <section class="server-subsection">
         <h3>Zonas horarias de MariaDB</h3>
         <p>Carga o actualiza las tablas de zonas horarias de MariaDB en este VPS desde /usr/share/zoneinfo. No cambia la zona horaria predeterminada ni los datos de tus aplicaciones.</p>
         <button class="secondary" wire:click="$set('confirmTimezones', true)">Cargar / actualizar zonas horarias</button>
         @error('timezones')<p class="error" role="alert">{{ $message }}</p>@enderror
         @if($timezoneOutput)<pre class="laravel-console" role="status">{{ $timezoneOutput }}</pre>@endif
         @if($confirmTimezones)<dialog class="git-dialog" wire:ignore.self x-data x-init="$el.showModal()" @cancel.prevent="$wire.set('confirmTimezones', false)" aria-label="Confirmar carga de zonas horarias"><h2>Cargar zonas horarias</h2><p>Se respaldan y actualizan únicamente las cinco tablas mysql.time_zone* de MariaDB local. Esta acción afecta al catálogo compartido de todos los dominios.</p><p>No se reinicia MariaDB. Si ya tenía zonas horarias en caché, programa un reinicio para aplicar sus cambios.</p><footer><button class="primary" wire:click="importTimezones" wire:loading.attr="disabled">Confirmar carga</button><button class="secondary" wire:click="$set('confirmTimezones', false)" wire:loading.attr="disabled">Cancelar</button></footer><p wire:loading wire:target="importTimezones">Cargando zonas horarias…</p></dialog>@endif
+        </section>
+        </div>
     </section>
     @if(session('notice'))<div class="notice">{{ session('notice') }}</div>@endif
     <form wire:submit="save" class="panel form-grid" id="applications-settings">
