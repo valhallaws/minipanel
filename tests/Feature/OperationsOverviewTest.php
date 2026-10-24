@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\RunDeployment;
 use App\Livewire\ServerHealth;
 use App\Models\Deployment;
 use App\Models\Site;
@@ -10,6 +11,7 @@ use App\Models\User;
 use App\Services\ServerReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -94,6 +96,73 @@ class OperationsOverviewTest extends TestCase
             ->assertDontSee('one-failure.example.test')
             ->assertSee('Certificados')
             ->assertSee('certificate.example.test');
+    }
+
+    public function test_incident_center_retries_safe_failures_and_queues_guided_checks(): void
+    {
+        Process::fake();
+        Queue::fake([RunDeployment::class]);
+        $user = User::factory()->create();
+        $failed = $this->site('failed.example.test');
+        $offline = $this->site('offline.example.test');
+        $stale = $this->site('stale.example.test');
+        $offline->update(['health_status' => 'degraded', 'health_checked_at' => now()]);
+        $stale->update(['last_backup_at' => now()->subDays(8)]);
+        $operation = Deployment::create([
+            'site_id' => $failed->id,
+            'user_id' => $user->id,
+            'action' => 'deploy',
+            'parameters' => ['arguments' => ['--safe']],
+            'status' => 'failed',
+            'output' => 'Vite no pudo escribir el build.',
+            'finished_at' => now(),
+        ]);
+
+        Livewire::actingAs($user)->test(ServerHealth::class)
+            ->assertSee('Centro de incidentes')
+            ->assertSee('Ver causa')
+            ->assertSee('Reintentar deploy')
+            ->call('retryOperation', $operation->id)
+            ->assertHasNoErrors();
+
+        $retry = Deployment::query()->where('id', '!=', $operation->id)->where('site_id', $failed->id)->sole();
+        $this->assertSame('deploy', $retry->action);
+        $this->assertSame(['arguments' => ['--safe']], $retry->parameters);
+        $this->assertSame('queued', $retry->status);
+
+        Livewire::actingAs($user)->test(ServerHealth::class)
+            ->call('checkSiteNow', $offline->id)
+            ->assertHasNoErrors();
+        Livewire::actingAs($user)->test(ServerHealth::class)
+            ->call('createBackupNow', $stale->id)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('deployments', ['site_id' => $offline->id, 'action' => 'health', 'status' => 'queued']);
+        $this->assertDatabaseHas('deployments', ['site_id' => $stale->id, 'action' => 'backup', 'status' => 'queued']);
+        Queue::assertPushed(RunDeployment::class, 3);
+    }
+
+    public function test_incident_center_refuses_to_retry_arbitrary_server_commands(): void
+    {
+        Process::fake();
+        Queue::fake();
+        $user = User::factory()->create();
+        $site = $this->site('example.test');
+        $operation = Deployment::create([
+            'site_id' => $site->id,
+            'user_id' => $user->id,
+            'action' => 'laravel-command',
+            'status' => 'failed',
+            'output' => 'No permitido.',
+            'finished_at' => now(),
+        ]);
+
+        Livewire::actingAs($user)->test(ServerHealth::class)
+            ->call('retryOperation', $operation->id)
+            ->assertStatus(422);
+
+        $this->assertDatabaseCount('deployments', 1);
+        Queue::assertNothingPushed();
     }
 
     private function site(string $domain): Site
