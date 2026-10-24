@@ -189,6 +189,22 @@ class ServerTimezonesTest extends TestCase
             ->assertSee('Ver detalle técnico');
     }
 
+    public function test_server_overview_warns_when_the_vps_requires_a_reboot(): void
+    {
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->set('serverStatus', [
+                'Reinicio requerido' => 'sí',
+                'Servicio:nginx' => 'active',
+                'Servicio:php'.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION.'-fpm' => 'active',
+                'Servicio:mariadb' => 'active',
+                'Servicio:redis-server' => 'active',
+                'Servicio:minipanel-worker' => 'active',
+                'Servicio:minipanel-root-terminal' => 'active',
+            ])
+            ->assertSee('Reinicio requerido')
+            ->assertSee('Hay actualizaciones aplicadas que requieren reiniciar el VPS.');
+    }
+
     public function test_maintenance_displays_the_installed_panel_version_and_webhook_route(): void
     {
         Process::fake(fn () => Process::result("Rama\tmain\nCommit\t3608478\nFecha\t2026-09-09T12:00:00+00:00\n"));

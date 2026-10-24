@@ -386,6 +386,8 @@ if [[ "$action" == 'server-status' ]]; then
   printf 'Memoria disponible\t%s\n' "$(free -h | awk '/Mem:/ {print $7}')"
   printf 'Disco /\t%s\n' "$(df -h / | awk 'NR==2 {print $3 " usados de " $2 " (" $5 ")"}')"
   printf 'Inodos /\t%s\n' "$(df -i / | awk 'NR==2 {print $3 " usados de " $2 " (" $5 ")"}')"
+  [[ -e /var/run/reboot-required ]] && reboot_required='sí' || reboot_required='no'
+  printf 'Reinicio requerido\t%s\n' "$reboot_required"
   for service in nginx "$panel_php_service" mariadb redis-server minipanel-worker minipanel-root-terminal; do
     printf 'Servicio:%s\t%s\n' "$service" "$(systemctl is-active "$service" 2>/dev/null || true)"
     printf 'ServicioPID:%s\t%s\n' "$service" "$(systemctl show "$service" --property=MainPID --value 2>/dev/null || true)"
