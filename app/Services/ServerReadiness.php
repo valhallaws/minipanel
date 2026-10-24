@@ -10,15 +10,15 @@ class ServerReadiness
     public function inspect(): array
     {
         $checks = [
-            $this->command('PHP', ['php', '-v']),
-            $this->command('Nginx', ['nginx', '-v']),
-            $this->command('Git', ['git', '--version']),
-            $this->command('Composer', ['composer', '--version']),
-            $this->command('Node.js', ['node', '--version']),
-            $this->command('NPM', ['npm', '--version']),
-            $this->command('Certbot', ['certbot', '--version']),
-            $this->command('DNS utilities', ['dig', '-v']),
-            $this->command('Redis', ['redis-cli', 'ping']),
+            $this->command('PHP', ['/usr/bin/php', '-v']),
+            $this->command('Nginx', ['/usr/sbin/nginx', '-v']),
+            $this->command('Git', ['/usr/bin/git', '--version']),
+            $this->command('Composer', ['/usr/bin/composer', '--version']),
+            $this->command('Node.js', ['/usr/bin/node', '--version']),
+            $this->command('NPM', ['/usr/bin/npm', '--version']),
+            $this->command('Certbot', ['/usr/local/bin/certbot', '--version']),
+            $this->command('DNS utilities', ['/usr/bin/dig', '-v']),
+            $this->command('Redis', ['/usr/bin/redis-cli', 'ping']),
         ];
 
         $agentInstalled = is_file('/usr/local/bin/minipanel-agent');
@@ -29,7 +29,7 @@ class ServerReadiness
         ];
         $checks[] = [
             'name' => 'Ejecución administrativa',
-            'status' => config('minipanel.execution_enabled') ? 'warning' : 'ok',
+            'status' => 'ok',
             'detail' => config('minipanel.execution_enabled') ? 'Habilitada: el agente puede hacer cambios' : 'Deshabilitada: modo seguro',
         ];
         $checks[] = $this->applicationDatabase();

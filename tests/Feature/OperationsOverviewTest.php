@@ -6,6 +6,7 @@ use App\Livewire\ServerHealth;
 use App\Models\Deployment;
 use App\Models\Site;
 use App\Models\User;
+use App\Services\ServerReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
 use Livewire\Livewire;
@@ -44,6 +45,20 @@ class OperationsOverviewTest extends TestCase
             ->assertSee('Respaldo pendiente')
             ->assertSee('stale.example.test')
             ->assertDontSee('fresh.example.test');
+    }
+
+    public function test_ready_dependencies_and_enabled_execution_are_healthy_not_warnings(): void
+    {
+        config()->set('minipanel.execution_enabled', true);
+        Process::fake(fn () => Process::result('available'));
+
+        $checks = app(ServerReadiness::class)->inspect();
+
+        $this->assertSame([], collect($checks)
+            ->reject(fn (array $check): bool => $check['name'] === 'Agente MiniPanel')
+            ->where('status', '!=', 'ok')
+            ->all());
+        $this->assertSame('Habilitada: el agente puede hacer cambios', collect($checks)->firstWhere('name', 'Ejecución administrativa')['detail']);
     }
 
     private function site(string $domain): Site
