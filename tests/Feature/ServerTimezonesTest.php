@@ -171,6 +171,24 @@ class ServerTimezonesTest extends TestCase
             ->assertSee('PHP-FPM '.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION);
     }
 
+    public function test_server_overview_keeps_technical_details_collapsed(): void
+    {
+        Livewire::actingAs(User::factory()->create())->test(ServerSetup::class)
+            ->set('serverStatus', [
+                'Sistema' => 'Ubuntu 24.04',
+                'Uptime' => 'up 2 days',
+                'Servicio:nginx' => 'active',
+                'Servicio:php'.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION.'-fpm' => 'active',
+                'Servicio:mariadb' => 'active',
+                'Servicio:redis-server' => 'active',
+                'Servicio:minipanel-worker' => 'active',
+                'Servicio:minipanel-root-terminal' => 'active',
+            ])
+            ->assertSee('Servidor en orden')
+            ->assertSee('6/6 servicios esenciales activos')
+            ->assertSee('Ver detalle técnico');
+    }
+
     public function test_maintenance_displays_the_installed_panel_version_and_webhook_route(): void
     {
         Process::fake(fn () => Process::result("Rama\tmain\nCommit\t3608478\nFecha\t2026-09-09T12:00:00+00:00\n"));
