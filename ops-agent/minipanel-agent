@@ -1700,7 +1700,25 @@ EOF
   health)
     health_url="${extra_arguments[0]:-}"
     [[ "$health_url" =~ ^https?://[A-Za-z0-9.-]+([/:?#][^[:space:]]*)?$ ]] || fail 'Invalid health URL'
-    curl --fail --show-error --silent --location --max-time 15 --output /dev/null --write-out 'HTTP %{http_code}' "$health_url"
+    if ! health_result="$(curl --silent --location --max-time 15 --output /dev/null --write-out '%{http_code} %{time_total}' "$health_url" 2>/dev/null)"; then
+      printf '%s\n' '{"status":"failed","status_code":null,"response_time_ms":null,"error":"No se pudo conectar al sitio."}'
+      exit 0
+    fi
+    read -r health_status_code health_seconds <<< "$health_result"
+    [[ "$health_status_code" =~ ^[0-9]{3}$ && "$health_seconds" =~ ^[0-9]+(\.[0-9]+)?$ ]] || fail 'Invalid health response'
+    health_latency_ms="$(awk -v seconds="$health_seconds" 'BEGIN { printf "%.0f", seconds * 1000 }')"
+    if [[ "$health_status_code" =~ ^[23] ]]; then
+      health_status='healthy'
+      health_error=''
+      if [[ "$health_latency_ms" -ge 2000 ]]; then
+        health_status='degraded'
+        health_error='La respuesta tardó más de 2 segundos.'
+      fi
+    else
+      health_status='failed'
+      health_error="El sitio respondió HTTP $health_status_code."
+    fi
+    printf '{"status":"%s","status_code":%s,"response_time_ms":%s,"error":"%s"}\n' "$health_status" "$health_status_code" "$health_latency_ms" "$health_error"
     ;;
   dns-check)
     command -v dig >/dev/null || { echo 'Install dnsutils to use DNS propagation checks.' >&2; exit 69; }

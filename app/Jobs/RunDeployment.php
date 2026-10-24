@@ -116,8 +116,8 @@ class RunDeployment implements ShouldQueue
         if ($deployment->action === 'prune-backups' && $result->successful()) {
             $this->markExpiredBackups($site);
         }
-        if ($deployment->action === 'health' && $result->successful()) {
-            $site->update(['health_status' => trim($result->output()), 'health_checked_at' => now()]);
+        if ($deployment->action === 'health') {
+            $output = $this->recordHealthCheck($site, $output, $result->successful());
         }
         if ($deployment->action === 'dns-check' && $result->successful()) {
             $site->update(['dns_results' => json_decode($result->output(), true) ?? [], 'dns_checked_at' => now()]);
@@ -209,6 +209,50 @@ class RunDeployment implements ShouldQueue
                     'output' => 'Eliminado por la política de retención de respaldos.',
                 ]);
             });
+    }
+
+    private function recordHealthCheck(Site $site, string $output, bool $agentSucceeded): string
+    {
+        $result = json_decode($output, true);
+        $statuses = ['healthy', 'degraded', 'failed'];
+        $status = is_array($result) && in_array($result['status'] ?? null, $statuses, true)
+            ? $result['status']
+            : 'failed';
+        $statusCode = filter_var($result['status_code'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 100, 'max_range' => 599]]);
+        $responseTime = filter_var($result['response_time_ms'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        $error = is_array($result) && is_string($result['error'] ?? null) && $result['error'] !== ''
+            ? str($result['error'])->limit(255)->toString()
+            : null;
+
+        if (! $agentSucceeded || ! is_array($result)) {
+            $error = str($output ?: 'El agente no devolvió una respuesta válida.')->squish()->limit(255)->toString();
+        }
+
+        $site->healthChecks()->create([
+            'status' => $status,
+            'status_code' => $statusCode === false ? null : $statusCode,
+            'response_time_ms' => $responseTime === false ? null : $responseTime,
+            'error' => $error,
+            'checked_at' => now(),
+        ]);
+        $site->update(['health_status' => $status, 'health_checked_at' => now()]);
+
+        $summary = 'Disponibilidad: '.match ($status) {
+            'healthy' => 'activa',
+            'degraded' => 'lenta',
+            default => 'sin respuesta',
+        };
+        if ($statusCode !== false) {
+            $summary .= ' · HTTP '.$statusCode;
+        }
+        if ($responseTime !== false) {
+            $summary .= ' · '.$responseTime.' ms';
+        }
+        if ($error) {
+            $summary .= ' · '.$error;
+        }
+
+        return $summary;
     }
 
     private function saveInspection(Site $site, string $output): void

@@ -14,7 +14,8 @@ class OperationsOverview
      *     stalled: Collection<int, Deployment>,
      *     failed: Collection<int, Deployment>,
      *     lifecycle: Collection<int, Site>,
-     *     backups: Collection<int, Site>
+     *     backups: Collection<int, Site>,
+     *     availability: Collection<int, Site>
      * }
      */
     public function inspect(): array
@@ -49,6 +50,12 @@ class OperationsOverview
             'backups' => Site::query()->where('status', 'active')->where('backup_enabled', true)->where(function ($query): void {
                 $query->whereNull('last_backup_at')->orWhere('last_backup_at', '<', now()->subDays(7));
             })->orderBy('last_backup_at')->take(12)->get(),
+            'availability' => Site::query()->where('status', 'active')->where(function ($query): void {
+                $query->whereIn('health_status', ['failed', 'degraded'])
+                    ->orWhere(function ($query): void {
+                        $query->whereNotNull('health_checked_at')->where('health_checked_at', '<', now()->subMinutes(30));
+                    });
+            })->orderBy('health_checked_at')->take(12)->get(),
         ];
     }
 }

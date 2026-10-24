@@ -100,6 +100,11 @@ class Site extends Model
         return $this->hasMany(DnsCheckRun::class);
     }
 
+    public function healthChecks(): HasMany
+    {
+        return $this->hasMany(SiteHealthCheck::class);
+    }
+
     public function fileOperations(): HasMany
     {
         return $this->hasMany(SiteFileOperation::class);

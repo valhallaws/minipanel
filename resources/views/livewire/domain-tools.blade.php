@@ -15,5 +15,5 @@
 <div class="domain-tool-grid">
     <a href="{{ route('sites.ssl', $site) }}"><i><x-ui-icon name="shield" /></i><span>SSL/TLS<small>{{ $site->ssl_enabled ? 'Certificado emitido' : 'Solicitar certificado' }}</small></span></a>
     <button @click="drawer = 'hosting'"><i><x-ui-icon name="settings" /></i><span>Nginx<small>Límites y directivas</small></span></button>
-    <button @click="drawer = 'health'"><i><x-ui-icon name="network" /></i><span>DNS y salud</span></button>
+    <button @click="drawer = 'monitor'"><i><x-ui-icon name="activity" /></i><span>Monitorización<small>Disponibilidad e historial</small></span></button>
 </div>

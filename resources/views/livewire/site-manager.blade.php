@@ -31,7 +31,8 @@
 <section x-show="tab === 'activity'" x-cloak><section class="panel activity"><h2>Actividad</h2>@forelse($activity as $item)<div class="activity-row"><span class="dot {{ $item->status }}"></span><div><strong>{{ $item->action }}</strong><p>{{ $item->output }}</p></div><time>{{ $item->created_at->diffForHumans() }}</time></div>@empty <p class="muted">Sin operaciones todavía.</p>@endforelse</section></section>
 </div></main></div>
 <footer class="site-summary-footer"><span>Web: <a href="{{ $site->ssl_enabled ? 'https' : 'http' }}://{{ $site->domain }}" target="_blank" rel="noopener">/{{ $site->document_root ?? '.' }} ↗</a></span><span>IP: {{ $serverIp ?: 'Sin configurar' }}</span><span>Root: <code>{{ $site->path }}</code></span><span>PHP {{ $site->php_version }} · SSL {{ $site->ssl_enabled ? 'Activo' : 'Pendiente' }}</span><span>Rama {{ $primaryRepository?->branch ?? $site->branch }}</span><span>Commit <code>{{ $currentCommit ? substr($currentCommit, 0, 8) : '—' }}</code></span><span>Último push {{ $primaryRepository?->last_push_at?->timezone($serverTimezone)->format('d/m/Y H:i') ?? 'Sin push recibido' }}</span></footer>
-<div class="settings-backdrop" x-show="drawer !== ''" x-cloak @keydown.escape.window="drawer = ''">
+@include('livewire.site-health-monitor')
+<div class="settings-backdrop" x-show="drawer !== '' && drawer !== 'monitor'" x-cloak @keydown.escape.window="drawer = ''">
 <section class="settings-drawer" :class="{ 'hosting-drawer': drawer === 'hosting' }" role="dialog" aria-modal="true" aria-label="Configuración del sitio"><header><strong>{{ $site->domain }}</strong><button class="ghost" @click="drawer = ''">Cerrar ✕</button></header><div class="settings-body">
 <div x-show="drawer === 'hosting'" x-cloak>
     <nav class="project-tabs settings-tabs" aria-label="Configuración de hosting">
