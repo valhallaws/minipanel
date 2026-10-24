@@ -25,13 +25,16 @@ class OperationsOverviewTest extends TestCase
         $lifecycle = $this->site('lifecycle.example.test');
         $stale = $this->site('stale.example.test');
         $fresh = $this->site('fresh.example.test');
+        $historical = $this->site('historical.example.test');
 
         Deployment::create(['site_id' => $active->id, 'user_id' => $user->id, 'action' => 'deploy', 'status' => 'running', 'output' => 'Ejecutando agente…']);
         Deployment::create(['site_id' => $active->id, 'user_id' => $user->id, 'action' => 'provision', 'status' => 'running', 'output' => 'Esperando agente…', 'started_at' => now()->subMinutes(31)]);
         Deployment::create(['site_id' => $failed->id, 'user_id' => $user->id, 'action' => 'backup', 'status' => 'failed', 'output' => 'No se pudo crear el respaldo.', 'finished_at' => now()]);
+        Deployment::create(['site_id' => $historical->id, 'user_id' => $user->id, 'action' => 'laravel-command', 'status' => 'failed', 'output' => 'Fallo histórico.', 'finished_at' => now()->subDays(2)]);
         $lifecycle->update(['lifecycle_action' => 'purge', 'lifecycle_error' => 'El agente no pudo completar la operación.']);
         $stale->update(['last_backup_at' => now()->subDays(8)]);
         $fresh->update(['last_backup_at' => now()->subDay()]);
+        $historical->update(['last_backup_at' => now()]);
 
         Livewire::actingAs($user)->test(ServerHealth::class)
             ->assertSee('Operación en curso')
@@ -40,6 +43,7 @@ class OperationsOverviewTest extends TestCase
             ->assertSee('Operaciones detenidas')
             ->assertSee('Requiere atención')
             ->assertSee('failed.example.test')
+            ->assertDontSee('historical.example.test')
             ->assertSee('Error de ciclo de vida')
             ->assertSee('lifecycle.example.test')
             ->assertSee('Respaldo pendiente')

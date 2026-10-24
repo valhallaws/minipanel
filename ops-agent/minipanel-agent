@@ -193,7 +193,7 @@ include_reverb_proxy_in_servers() {
 }
 
 queue_service_status() {
-  local prefix="$1" unit_file unit_name suffix queue worker state tries timeout first='1'
+  local prefix="$1" unit_file unit_name suffix queue worker state tries timeout first='1' configured_queues='|'
   local -A queue_workers queue_active_workers queue_configured_workers queue_tries queue_timeouts
 
   for unit_file in "/etc/systemd/system/${prefix}-"*.service; do
@@ -210,12 +210,16 @@ queue_service_status() {
     esac
     tries="$(sed -nE 's/^ExecStart=.*--tries=([0-9]+).*/\1/p' "$unit_file" | tail -n 1)"
     timeout="$(sed -nE 's/^ExecStart=.*--timeout=([0-9]+).*/\1/p' "$unit_file" | tail -n 1)"
-    if [[ -z "${queue_configured_workers[$queue]+configured}" ]]; then
+    if [[ "$configured_queues" != *"|$queue|"* ]]; then
       queue_workers["$queue"]=''
       queue_active_workers["$queue"]=0
       queue_configured_workers["$queue"]=0
+      configured_queues+="$queue|"
     fi
-    queue_workers["$queue"]+="${queue_workers[$queue]:+,}{\"number\":$worker,\"status\":\"$state\"}"
+    if [[ -n "${queue_workers[$queue]}" ]]; then
+      queue_workers["$queue"]+=','
+    fi
+    queue_workers["$queue"]+="{\"number\":$worker,\"status\":\"$state\"}"
     (( queue_configured_workers["$queue"] += 1 ))
     if [[ "$state" == 'active' ]]; then
       (( queue_active_workers["$queue"] += 1 ))

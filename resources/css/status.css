@@ -5,3 +5,8 @@
 .dot.failed {
     background: #d95650;
 }
+
+.operations-grid section {
+    max-height: 360px;
+    overflow-y: auto;
+}

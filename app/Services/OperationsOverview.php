@@ -33,7 +33,18 @@ class OperationsOverview
                 ->latest('started_at')
                 ->take(12)
                 ->get(),
-            'failed' => Deployment::query()->with('site')->whereIn('status', ['failed', 'blocked'])->latest('finished_at')->take(12)->get(),
+            'failed' => Deployment::query()
+                ->with('site')
+                ->whereIn('status', ['failed', 'blocked'])
+                ->where(function ($query): void {
+                    $query->where('finished_at', '>=', now()->subDay())
+                        ->orWhere(function ($query): void {
+                            $query->whereNull('finished_at')->where('created_at', '>=', now()->subDay());
+                        });
+                })
+                ->latest('finished_at')
+                ->take(12)
+                ->get(),
             'lifecycle' => Site::withTrashed()->whereNotNull('lifecycle_error')->whereNotNull('lifecycle_action')->orderByDesc('updated_at')->take(12)->get(),
             'backups' => Site::query()->where('status', 'active')->where(function ($query): void {
                 $query->whereNull('last_backup_at')->orWhere('last_backup_at', '<', now()->subDays(7));
