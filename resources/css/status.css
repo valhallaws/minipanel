@@ -1,0 +1,7 @@
+.dot.finished {
+    background: #48b071;
+}
+
+.dot.failed {
+    background: #d95650;
+}
