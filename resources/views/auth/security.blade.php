@@ -42,10 +42,15 @@
                         </p>
                     </div>
                     @if($canManagePasskeys)
-                        <form method="POST" action="{{ route('passkey.destroy', $passkey) }}" onsubmit="return confirm('¿Revocar esta passkey? El dispositivo dejará de poder entrar al panel.');">
+                        <form method="POST" action="{{ route('passkey.destroy', $passkey) }}" x-data="{ confirmOpen: false }" x-ref="passkeyForm" @submit.prevent="confirmOpen = true">
                             @csrf
                             @method('DELETE')
                             <button class="danger-button" type="submit">Revocar</button>
+                            <dialog class="git-dialog confirmation-dialog" x-ref="confirmDialog" x-effect="if (confirmOpen && !$refs.confirmDialog.open) $refs.confirmDialog.showModal(); if (!confirmOpen && $refs.confirmDialog.open) $refs.confirmDialog.close()" @cancel.prevent="confirmOpen = false" aria-labelledby="passkey-revocation-title">
+                                <header><h2 id="passkey-revocation-title">Revocar passkey</h2><button type="button" class="ghost" @click="confirmOpen = false" aria-label="Cerrar">×</button></header>
+                                <p>Este dispositivo dejará de poder iniciar sesión con su passkey. Puedes registrarlo de nuevo después si lo necesitas.</p>
+                                <footer><button type="button" class="danger-button" @click="$refs.passkeyForm.submit()">Revocar passkey</button><button type="button" class="secondary" @click="confirmOpen = false">Cancelar</button></footer>
+                            </dialog>
                         </form>
                     @endif
                 </div>

@@ -57,6 +57,10 @@ class FileManager extends Component
 
     public bool $editing = false;
 
+    public string $discardChangesAction = '';
+
+    public string $discardChangesDirectory = '';
+
     public string $modal = '';
 
     public string $permissions = '640';
@@ -90,6 +94,45 @@ class FileManager extends Component
         $this->editing = false;
         $this->contents = '';
         $this->loadedReadOperationId = null;
+    }
+
+    public function requestCloseEditor(): void
+    {
+        $this->discardChangesAction = 'close';
+        $this->discardChangesDirectory = '';
+    }
+
+    public function requestOpenDirectory(string $directory, SiteFilePath $paths): void
+    {
+        $directory = $paths->normalize($directory);
+        if (! $this->editing) {
+            $this->openDirectory($directory, $paths);
+
+            return;
+        }
+
+        $this->discardChangesAction = 'directory';
+        $this->discardChangesDirectory = $directory;
+    }
+
+    public function cancelDiscardChanges(): void
+    {
+        $this->discardChangesAction = '';
+        $this->discardChangesDirectory = '';
+    }
+
+    public function discardChanges(SiteFilePath $paths): void
+    {
+        abort_unless(in_array($this->discardChangesAction, ['close', 'directory'], true), 422);
+
+        $action = $this->discardChangesAction;
+        $directory = $this->discardChangesDirectory;
+        $this->cancelDiscardChanges();
+        $this->closeEditor();
+
+        if ($action === 'directory') {
+            $this->openDirectory($directory, $paths);
+        }
     }
 
     public function submitModal(SiteFilePath $paths): void

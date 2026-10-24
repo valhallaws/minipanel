@@ -29,11 +29,18 @@
                 @if($repository->project_type === 'Laravel')<p>Laravel detectado. Para servirlo configura <code>{{ $repository->directory }}/public</code> en <a href="{{ route('sites.show', $site) }}">Hosting</a>. La raíz web no cambia automáticamente.</p>@endif
             </details>
             @if($repository->error)<p class="error" role="alert">{{ $repository->error }}</p>@endif
-            <footer><button class="primary" wire:click="syncRepository({{ $repository->id }})" wire:loading.attr="disabled" @disabled(in_array($repository->status, ['queued', 'running']))>{{ $repository->status === 'failed' ? 'Reintentar' : 'Pull ahora' }}</button><button class="secondary" wire:click="showProgress({{ $repository->id }})">Ver progreso</button><button class="ghost" wire:click="removeRepository({{ $repository->id }})" wire:confirm="¿Quitar este repositorio del panel? No se eliminarán sus archivos del sitio.">Quitar</button><small>{{ $repository->synced_at?->format('d/m/Y H:i') }}</small></footer>
+            <footer><button class="primary" wire:click="syncRepository({{ $repository->id }})" wire:loading.attr="disabled" @disabled(in_array($repository->status, ['queued', 'running']))>{{ $repository->status === 'failed' ? 'Reintentar' : 'Pull ahora' }}</button><button class="secondary" wire:click="showProgress({{ $repository->id }})">Ver progreso</button><button class="ghost" wire:click="prepareRepositoryRemoval({{ $repository->id }})">Quitar</button><small>{{ $repository->synced_at?->format('d/m/Y H:i') }}</small></footer>
         </article>
         @endforeach
         <button class="git-add" wire:click="openCreate" wire:loading.attr="disabled"><x-ui-icon name="git" /><span>＋ Añadir repositorio</span><small>Clonar por SSH en una carpeta de este dominio</small></button>
     </div>
+    @if($confirmingRemovalId)
+    <dialog class="git-dialog confirmation-dialog" wire:ignore.self x-data x-init="$el.showModal()" @cancel.prevent="$wire.cancelRepositoryRemoval()" aria-labelledby="repository-removal-title">
+        <header><h2 id="repository-removal-title">Quitar repositorio</h2><button class="ghost" wire:click="cancelRepositoryRemoval" aria-label="Cerrar">×</button></header>
+        <p>Se quitará la configuración de este repositorio del panel. Los archivos del sitio y el repositorio remoto no se modificarán.</p>
+        <footer><button class="danger-button" wire:click="removeRepository" wire:loading.attr="disabled">Quitar repositorio</button><button class="secondary" wire:click="cancelRepositoryRemoval" wire:loading.attr="disabled">Cancelar</button></footer>
+    </dialog>
+    @endif
     @if($showCreate)
     <dialog class="git-dialog" wire:ignore.self x-data x-init="$el.showModal()" @cancel.prevent="$wire.closeCreate()" aria-label="Crear repositorio">
         <header><h2>Crear repositorio</h2><button class="ghost" wire:click="closeCreate" aria-label="Cerrar">×</button></header>

@@ -27,6 +27,9 @@ class GitManager extends Component
     public ?int $progressId = null;
 
     #[Locked]
+    public ?int $confirmingRemovalId = null;
+
+    #[Locked]
     public array $folders = [];
 
     public bool $showCreate = false;
@@ -132,19 +135,35 @@ class GitManager extends Component
         $this->progressId = $id;
     }
 
-    public function removeRepository(int $id): void
+    public function prepareRepositoryRemoval(int $id): void
     {
         abort_unless(Auth::check(), 403);
 
-        DB::transaction(function () use ($id): void {
+        $this->confirmingRemovalId = $this->site->repositories()->findOrFail($id)->id;
+    }
+
+    public function cancelRepositoryRemoval(): void
+    {
+        $this->confirmingRemovalId = null;
+    }
+
+    public function removeRepository(): void
+    {
+        abort_unless(Auth::check(), 403);
+
+        abort_unless($this->confirmingRemovalId !== null, 422);
+
+        DB::transaction(function (): void {
             $site = Site::whereKey($this->site->id)->lockForUpdate()->firstOrFail();
-            $repository = $site->repositories()->findOrFail($id);
+            $repository = $site->repositories()->findOrFail($this->confirmingRemovalId);
             $repository->delete();
         });
 
-        if ($this->progressId === $id) {
+        if ($this->progressId === $this->confirmingRemovalId) {
             $this->progressId = null;
         }
+
+        $this->confirmingRemovalId = null;
 
         session()->flash('notice', 'Repositorio quitado del panel. Sus archivos no se modificaron.');
     }

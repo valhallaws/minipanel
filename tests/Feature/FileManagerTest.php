@@ -271,6 +271,26 @@ class FileManagerTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_editor_requires_confirmation_before_discarding_unsaved_changes(): void
+    {
+        Queue::fake();
+        $component = Livewire::actingAs(User::factory()->create())->test(FileManager::class, ['site' => $this->site()])
+            ->set('editing', true)
+            ->set('contents', 'Unsaved text')
+            ->call('requestCloseEditor')
+            ->assertSet('discardChangesAction', 'close')
+            ->assertSee('Descartar cambios sin guardar');
+
+        $component->call('cancelDiscardChanges')
+            ->assertSet('editing', true)
+            ->call('requestCloseEditor')
+            ->call('discardChanges')
+            ->assertSet('editing', false)
+            ->assertSet('contents', '');
+
+        Queue::assertNothingPushed();
+    }
+
     private function site(string $domain = 'example.com'): Site
     {
         return Site::create([

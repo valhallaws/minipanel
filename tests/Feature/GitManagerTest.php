@@ -112,7 +112,9 @@ class GitManagerTest extends TestCase
         $repository = SiteRepository::factory()->for($site)->create(['status' => 'failed']);
 
         Livewire::actingAs(User::factory()->create())->test(GitManager::class, ['site' => $site])
-            ->call('removeRepository', $repository->id)
+            ->call('prepareRepositoryRemoval', $repository->id)
+            ->assertSet('confirmingRemovalId', $repository->id)
+            ->call('removeRepository')
             ->assertHasNoErrors();
 
         $this->assertDatabaseMissing('site_repositories', ['id' => $repository->id]);
@@ -128,7 +130,8 @@ class GitManagerTest extends TestCase
         $repository = SiteRepository::factory()->for($site)->create(['directory' => 'httpdocs', 'status' => 'failed']);
 
         Livewire::actingAs(User::factory()->create())->test(GitManager::class, ['site' => $site])
-            ->call('removeRepository', $repository->id)
+            ->call('prepareRepositoryRemoval', $repository->id)
+            ->call('removeRepository')
             ->call('openCreate')
             ->set('name', 'Replacement')
             ->set('url', 'git@example.com:team/project.git')

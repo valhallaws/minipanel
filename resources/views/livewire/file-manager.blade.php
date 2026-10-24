@@ -17,7 +17,7 @@
     <section class="file-explorer" @if($editing) style="grid-template-columns: minmax(0,1fr)" @endif>
         @if(!$editing)<aside class="file-sidebar" :class="{ 'mobile-open': mobilePanel === 'tree' }">
             <p class="file-sidebar-title">UBICACIONES</p>
-            <button @if($editing) wire:confirm="¿Volver a la carpeta? Los cambios sin guardar se perderán." @endif wire:click="openDirectory('.')" x-on:click="query = ''; mobilePanel = 'files'" class="file-location {{ $directory === '.' ? 'active' : '' }}"><span>⌂</span> Raíz del sitio</button>
+            <button wire:click="requestOpenDirectory('.')" x-on:click="query = ''; mobilePanel = 'files'" class="file-location {{ $directory === '.' ? 'active' : '' }}"><span>⌂</span> Raíz del sitio</button>
             @if($directory !== '.')<button wire:click="parentDirectory" class="file-location"><span>↑</span> Carpeta superior</button>@endif
             <nav class="tree-scroll" aria-label="Árbol de carpetas">@include('livewire.file-tree', ['treePath' => '.'])</nav>
         </aside>@endif
@@ -39,14 +39,14 @@
             <div class="file-toolbar">
                 <button class="ghost explorer-mobile-toggle" x-on:click="mobilePanel = 'tree'">☰ Carpetas</button>
                 <div class="file-breadcrumbs">
-                    <button wire:click="openDirectory('.')" class="file-crumb">{{ $site->domain }}</button>
+                    <button wire:click="requestOpenDirectory('.')" class="file-crumb">{{ $site->domain }}</button>
                     @if($directory !== '.')
                         @foreach(explode('/', $directory) as $index => $part)
                             @php
                                 $breadcrumbPath = implode('/', array_slice(explode('/', $directory), 0, $index + 1));
                             @endphp
                             <span>/</span>
-                            <button wire:key="crumb-{{ $breadcrumbPath }}" wire:click="openDirectory('{{ $breadcrumbPath }}')" class="file-crumb">{{ $part }}</button>
+                            <button wire:key="crumb-{{ $breadcrumbPath }}" wire:click="requestOpenDirectory('{{ $breadcrumbPath }}')" class="file-crumb">{{ $part }}</button>
                         @endforeach
                     @endif
                 </div>
@@ -58,7 +58,7 @@
             @if($editing)
                 <div class="editor-tab">{{ $selectedPath }} <span wire:dirty wire:target="contents">· Sin guardar</span></div>
                 <textarea wire:model="contents" class="file-editor full-editor" aria-label="Contenido del archivo" spellcheck="false"></textarea>
-                <div class="editor-buttons"><button wire:click="saveFile" class="primary" wire:loading.attr="disabled">Guardar</button><button wire:click="closeEditor" wire:confirm="¿Cerrar el editor? Los cambios sin guardar se perderán." class="secondary">Volver a archivos</button></div>
+                <div class="editor-buttons"><button wire:click="saveFile" class="primary" wire:loading.attr="disabled">Guardar</button><button wire:click="requestCloseEditor" class="secondary">Volver a archivos</button></div>
             @else
             <div class="file-search"><span>⌕</span><input x-model="query" placeholder="Filtrar esta carpeta…"><small>{{ count($entries) }} elemento(s)</small></div>
             <div wire:key="directory-{{ $directory }}" class="file-browser {{ $viewMode === 'grid' ? 'is-grid' : '' }}" aria-live="polite">
@@ -91,6 +91,14 @@
         <button class="ghost explorer-mobile-toggle" x-show="mobilePanel !== 'files'" x-on:click="mobilePanel = 'files'">← Volver a archivos</button>
         <div class="file-operation-list" x-show="activityOpen" x-cloak>@forelse($operations as $operation)<p wire:key="operation-{{ $operation->id }}"><span class="dot {{ $operation->status }}"></span><strong>{{ str($operation->action)->replace('file-', '') }}</strong> {{ $operation->path }} <small>{{ $operation->status }}</small></p>@empty<p class="muted">Sin operaciones todavía.</p>@endforelse</div>
     </section>
+
+    @if($discardChangesAction)
+    <dialog class="git-dialog confirmation-dialog" wire:ignore.self x-data x-init="$el.showModal()" @cancel.prevent="$wire.cancelDiscardChanges()" aria-labelledby="discard-changes-title">
+        <header><h2 id="discard-changes-title">Descartar cambios sin guardar</h2><button class="ghost" wire:click="cancelDiscardChanges" aria-label="Cerrar">×</button></header>
+        <p>El contenido que editaste no se ha guardado. Si continúas, esos cambios se perderán.</p>
+        <footer><button class="danger-button" wire:click="discardChanges" wire:loading.attr="disabled">Descartar cambios</button><button class="secondary" wire:click="cancelDiscardChanges" wire:loading.attr="disabled">Seguir editando</button></footer>
+    </dialog>
+    @endif
 
     @if($modal)
     <div class="explorer-modal-backdrop" x-data="{ uploading: false, progress: 0, uploadError: false }" x-init="$nextTick(() => $el.querySelector('input,button')?.focus())" x-on:keydown.escape="if (!uploading) $wire.set('modal', '')"
