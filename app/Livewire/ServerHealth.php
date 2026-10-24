@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use App\Services\OperationsOverview;
 use App\Services\ServerReadiness;
 use Livewire\Component;
 
@@ -11,14 +12,17 @@ class ServerHealth extends Component
 
     public string $checkedAt = '';
 
-    public function mount(ServerReadiness $readiness): void
+    public array $operations = [];
+
+    public function mount(ServerReadiness $readiness, OperationsOverview $operations): void
     {
-        $this->refresh($readiness);
+        $this->refresh($readiness, $operations);
     }
 
-    public function refresh(ServerReadiness $readiness): void
+    public function refresh(ServerReadiness $readiness, OperationsOverview $operations): void
     {
         $this->checks = $readiness->inspect();
+        $this->operations = $operations->inspect();
         $this->checkedAt = now()->format('H:i:s');
     }
 

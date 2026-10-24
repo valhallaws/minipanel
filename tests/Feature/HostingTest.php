@@ -81,6 +81,29 @@ class HostingTest extends TestCase
         Queue::assertPushed(RunDeployment::class, fn ($job) => $job->deploymentId === $restore->id);
     }
 
+    public function test_a_completed_backup_can_be_queued_for_non_destructive_verification(): void
+    {
+        Queue::fake([RunDeployment::class]);
+        $site = $this->site();
+        $backup = Deployment::create([
+            'site_id' => $site->id,
+            'user_id' => User::factory()->create()->id,
+            'action' => 'backup',
+            'status' => 'finished',
+            'output' => '/var/backups/minipanel/example.com-20260907-120000.tar.gz',
+            'finished_at' => now(),
+        ]);
+
+        Livewire::actingAs(User::factory()->create())->test(BackupManager::class, ['site' => $site])
+            ->call('verifyBackup', $backup->id)
+            ->assertHasNoErrors()
+            ->assertSee('Verificación del respaldo puesta en cola.');
+
+        $verification = Deployment::query()->where('action', 'verify-backup')->sole();
+        $this->assertSame(['/var/backups/minipanel/example.com-20260907-120000.tar.gz'], $verification->parameters['arguments']);
+        Queue::assertPushed(RunDeployment::class, fn ($job) => $job->deploymentId === $verification->id);
+    }
+
     public function test_hosting_queues_changes_without_prematurely_applying_them(): void
     {
         Queue::fake([RunDeployment::class]);

@@ -752,7 +752,7 @@ if [[ "$action" == 'configure-mariadb' ]]; then
   chown root:root /etc/minipanel/mariadb-provisioner.cnf; chmod 0600 /etc/minipanel/mariadb-provisioner.cnf
   echo 'MariaDB provisioner configured'; exit 0
 fi
-case "$action" in file-extract|laravel-service|repository|site-lifecycle|snapshot|site-statistics|database-sync|configure-hosting|provision|deploy|issue-ssl|inspect|artisan|composer|npm|write-env|write-nginx-config|create-deploy-key|remove-deploy-key|backup|restore-backup|health|dns-check|logs|add-alias|remove-alias|restart-queue|rollback|configure-queue|remove-queue|suspend-site|resume-site|file-create|file-copy|file-compress|file-chmod|file-list|file-read|file-download|file-write|file-upload|file-mkdir|file-move|file-delete) ;; *) fail 'Action not allowed' ;; esac
+case "$action" in file-extract|laravel-service|repository|site-lifecycle|snapshot|site-statistics|database-sync|configure-hosting|provision|deploy|issue-ssl|inspect|artisan|composer|npm|write-env|write-nginx-config|create-deploy-key|remove-deploy-key|backup|verify-backup|restore-backup|health|dns-check|logs|add-alias|remove-alias|restart-queue|rollback|configure-queue|remove-queue|suspend-site|resume-site|file-create|file-copy|file-compress|file-chmod|file-list|file-read|file-download|file-write|file-upload|file-mkdir|file-move|file-delete) ;; *) fail 'Action not allowed' ;; esac
 [[ "$site_root" == "/var/www/$domain" ]] || fail 'Invalid site root'
 [[ "$domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] || fail 'Invalid domain'
 [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || fail 'Invalid branch'
@@ -1482,6 +1482,20 @@ EOF
     tar -C /var/backups/minipanel -czf "$backup_file" "$(basename "$backup_directory")"
     rm -rf "$backup_directory"
     echo "$backup_file"
+    ;;
+  verify-backup)
+    backup_file="${extra_arguments[0]:-}"
+    [[ "$backup_file" =~ ^/var/backups/minipanel/${domain}-[0-9]{8}-[0-9]{6}\.tar\.gz$ && -f "$backup_file" ]] || fail 'Backup file is not valid for this site'
+    verification_directory="$(mktemp -d /var/backups/minipanel/verify.XXXXXX)"
+    cleanup_verification() { rm -rf "$verification_directory"; }
+    trap cleanup_verification EXIT
+    tar -tzf "$backup_file" >/dev/null
+    tar -xzf "$backup_file" -C "$verification_directory" --no-same-owner --no-same-permissions
+    payload_directory="$(find "$verification_directory" -mindepth 1 -maxdepth 1 -type d -name "${domain}-*" -print -quit)"
+    [[ -n "$payload_directory" && -f "$payload_directory/files.tar.gz" ]] || fail 'Backup payload is incomplete'
+    while IFS= read -r archive_path; do [[ "$archive_path" == "$domain" || "$archive_path" == "$domain/"* ]] || fail 'Backup contains an unsafe file path'; done < <(tar -tzf "$payload_directory/files.tar.gz")
+    if [[ -f "$payload_directory/database.sql.gz" ]]; then gzip -t "$payload_directory/database.sql.gz"; fi
+    echo 'Backup verified: archive and payload are readable.'
     ;;
   restore-backup)
     [[ "${extra_arguments[0]:-}" == "RESTAURAR $public_domain" ]] || fail 'Restore confirmation does not match'

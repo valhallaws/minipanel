@@ -1,0 +1,54 @@
+name: Verify Freyja
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  application:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, dom, fileinfo, sqlite3
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: composer install --no-interaction --prefer-dist --optimize-autoloader
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: vendor/bin/pint --test
+      - run: php artisan test --compact
+      - run: bash -n ops-agent/install-minipanel ops-agent/minipanel-agent
+
+  installer-plan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare a production-shaped panel directory
+        run: |
+          sudo mkdir -p /var/www/freyja
+          sudo cp -a . /var/www/freyja
+          sudo cp .env.production.example /var/www/freyja/.env
+          sudo sed -i \
+            -e 's/^APP_KEY=.*/APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=/' \
+            -e 's/^PASSKEYS_USER_HANDLE_SECRET=.*/PASSKEYS_USER_HANDLE_SECRET=12345678901234567890123456789012/' \
+            -e 's/^PANEL_UPDATE_WEBHOOK_SECRET=.*/PANEL_UPDATE_WEBHOOK_SECRET=12345678901234567890123456789012/' \
+            -e 's/^PANEL_UPDATE_BRANCH=.*/PANEL_UPDATE_BRANCH=main/' \
+            -e 's/^DB_PASSWORD=.*/DB_PASSWORD=12345678901234567890123456789012/' \
+            /var/www/freyja/.env
+      - name: Validate the installer plan without changing the runner
+        run: |
+          sudo /var/www/freyja/ops-agent/install-minipanel \
+            --app-path /var/www/freyja \
+            --app-user freyja-control \
+            --php-version 8.4 \
+            --panel-ip 203.0.113.10 \
+            --panel-port 8443 \
+            --certificate-email operations@example.com \
+            --file-transfer-max-mb 2048

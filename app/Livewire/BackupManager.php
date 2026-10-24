@@ -49,17 +49,28 @@ class BackupManager extends Component
             ->where('action', 'backup')
             ->where('status', 'finished')
             ->firstOrFail();
-        $backupPath = trim($backup->output);
-        abort_unless(preg_match('~^/var/backups/minipanel/'.preg_quote($this->site->resourceDomain(), '~').'-[0-9]{8}-[0-9]{6}\\.tar\\.gz$~', $backupPath) === 1, 422, 'La ruta del respaldo no es válida.');
+        $backupPath = $this->backupPath($backup);
         $this->queue('restore-backup', [$this->restoreConfirmation, $backupPath]);
         $this->reset('restoreConfirmation', 'restoreBackupDeploymentId');
+    }
+
+    public function verifyBackup(int $deploymentId): void
+    {
+        abort_unless(Auth::check(), 403);
+        $backup = $this->site->deployments()
+            ->whereKey($deploymentId)
+            ->where('action', 'backup')
+            ->where('status', 'finished')
+            ->firstOrFail();
+
+        $this->queue('verify-backup', [$this->backupPath($backup)]);
     }
 
     public function render()
     {
         return view('livewire.backup-manager', [
             'backups' => $this->site->deployments()->where('action', 'backup')->where('status', 'finished')->latest()->take(30)->get(),
-            'activity' => $this->site->deployments()->whereIn('action', ['backup', 'restore-backup'])->latest()->take(12)->get(),
+            'activity' => $this->site->deployments()->whereIn('action', ['backup', 'verify-backup', 'restore-backup'])->latest()->take(12)->get(),
         ])->layout('components.layouts.app');
     }
 
@@ -76,6 +87,18 @@ class BackupManager extends Component
         ]);
         RunDeployment::dispatch($deployment->id);
         app(AuditLogger::class)->record('operation.queued', $this->site, ['action' => $action, 'deployment_id' => $deployment->id]);
-        session()->flash('notice', $action === 'backup' ? 'Respaldo puesto en cola.' : 'Restauración puesta en cola.');
+        session()->flash('notice', match ($action) {
+            'backup' => 'Respaldo puesto en cola.',
+            'verify-backup' => 'Verificación del respaldo puesta en cola.',
+            default => 'Restauración puesta en cola.',
+        });
+    }
+
+    private function backupPath(Deployment $backup): string
+    {
+        $backupPath = trim($backup->output);
+        abort_unless(preg_match('~^/var/backups/minipanel/'.preg_quote($this->site->resourceDomain(), '~').'-[0-9]{8}-[0-9]{6}\\.tar\\.gz$~', $backupPath) === 1, 422, 'La ruta del respaldo no es válida.');
+
+        return $backupPath;
     }
 }
