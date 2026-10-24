@@ -202,6 +202,7 @@ class ServerTimezonesTest extends TestCase
                 'Servicio:minipanel-root-terminal' => 'active',
             ])
             ->assertSee('Reinicio requerido')
+            ->assertSee('Reiniciar VPS')
             ->assertSee('Hay actualizaciones aplicadas que requieren reiniciar el VPS.');
     }
 
