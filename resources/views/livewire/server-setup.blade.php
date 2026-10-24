@@ -48,7 +48,7 @@
         <section class="security-rules-form telegram-settings">
             <div><h3>Alertas por Telegram</h3><p class="muted">Freyja avisa una sola vez cuando un sitio cae en dos comprobaciones seguidas, falla su respaldo o su certificado vence en 21 días. El token se guarda cifrado y nunca vuelve a mostrarse.</p></div>
             @if(session('telegramNotice'))<p class="notice" role="status">{{ session('telegramNotice') }}</p>@endif
-            <form wire:submit="saveTelegramSettings" class="form-grid">
+            <form wire:submit="saveTelegramSettings" class="form-grid telegram-form">
                 <label class="checkbox-label"><input wire:model="telegramEnabled" type="checkbox"> Activar alertas por Telegram</label>
                 <label>Chat ID<input wire:model="telegramChatId" autocomplete="off" placeholder="123456789 o -1001234567890"><small>Abre conversación con el bot antes de enviar la prueba.</small></label>
                 <label>Token del bot<input wire:model="telegramBotToken" type="password" autocomplete="new-password" placeholder="{{ $telegramTokenConfigured ? 'Configurado; déjalo vacío para conservarlo' : '123456789:ABC...' }}"><small>{{ $telegramTokenConfigured ? 'Hay un token guardado cifrado.' : 'Créalo con @BotFather en Telegram.' }}</small></label>
