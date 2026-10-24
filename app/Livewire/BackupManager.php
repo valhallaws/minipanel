@@ -17,15 +17,37 @@ class BackupManager extends Component
 
     public string $restoreConfirmation = '';
 
+    public bool $backupEnabled = true;
+
+    public int $backupRetention = 14;
+
     public function mount(Site $site): void
     {
         abort_unless(Auth::check(), 403);
         $this->site = $site;
+        $this->backupEnabled = $site->backup_enabled;
+        $this->backupRetention = $site->backup_retention;
     }
 
     public function createBackup(): void
     {
         $this->queue('backup');
+    }
+
+    public function saveBackupPolicy(): void
+    {
+        abort_unless(Auth::check(), 403);
+        $validated = $this->validate([
+            'backupEnabled' => ['boolean'],
+            'backupRetention' => ['required', 'integer', 'min:1', 'max:60'],
+        ]);
+
+        $this->site->update([
+            'backup_enabled' => $validated['backupEnabled'],
+            'backup_retention' => $validated['backupRetention'],
+        ]);
+
+        session()->flash('notice', 'Política de respaldos actualizada.');
     }
 
     public function selectBackupForRestore(int $deploymentId): void
@@ -70,7 +92,7 @@ class BackupManager extends Component
     {
         return view('livewire.backup-manager', [
             'backups' => $this->site->deployments()->where('action', 'backup')->where('status', 'finished')->latest()->take(30)->get(),
-            'activity' => $this->site->deployments()->whereIn('action', ['backup', 'verify-backup', 'restore-backup'])->latest()->take(12)->get(),
+            'activity' => $this->site->deployments()->whereIn('action', ['backup', 'verify-backup', 'prune-backups', 'restore-backup'])->latest()->take(12)->get(),
         ])->layout('components.layouts.app');
     }
 

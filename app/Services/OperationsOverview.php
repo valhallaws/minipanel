@@ -46,7 +46,7 @@ class OperationsOverview
                 ->take(12)
                 ->get(),
             'lifecycle' => Site::withTrashed()->whereNotNull('lifecycle_error')->whereNotNull('lifecycle_action')->orderByDesc('updated_at')->take(12)->get(),
-            'backups' => Site::query()->where('status', 'active')->where(function ($query): void {
+            'backups' => Site::query()->where('status', 'active')->where('backup_enabled', true)->where(function ($query): void {
                 $query->whereNull('last_backup_at')->orWhere('last_backup_at', '<', now()->subDays(7));
             })->orderBy('last_backup_at')->take(12)->get(),
         ];

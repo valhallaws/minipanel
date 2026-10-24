@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Deployment;
 use App\Models\ServerSetting;
+use App\Models\Site;
 use App\Models\SiteQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -109,6 +110,12 @@ class RunDeployment implements ShouldQueue
         if ($deployment->action === 'backup' && $result->successful()) {
             $site->update(['last_backup_at' => now(), 'last_backup_path' => trim($result->output())]);
         }
+        if ($deployment->action === 'verify-backup' && $result->successful()) {
+            $site->update(['backup_last_verified_at' => now()]);
+        }
+        if ($deployment->action === 'prune-backups' && $result->successful()) {
+            $this->markExpiredBackups($site);
+        }
         if ($deployment->action === 'health' && $result->successful()) {
             $site->update(['health_status' => trim($result->output()), 'health_checked_at' => now()]);
         }
@@ -167,9 +174,44 @@ class RunDeployment implements ShouldQueue
         if ($deployment->action === 'delete-site' && $result->successful()) {
             $site->delete();
         }
+
+        if ($result->successful() && $deployment->action === 'backup') {
+            $this->queueFollowUp($site, 'verify-backup', [trim($result->output())]);
+        }
+        if ($result->successful() && $deployment->action === 'verify-backup') {
+            $this->queueFollowUp($site, 'prune-backups', [(string) $site->backup_retention]);
+        }
     }
 
-    private function saveInspection($site, string $output): void
+    private function queueFollowUp(Site $site, string $action, array $arguments): void
+    {
+        $deployment = Deployment::create([
+            'site_id' => $site->id,
+            'action' => $action,
+            'parameters' => ['arguments' => $arguments, 'automatic' => true],
+            'status' => 'queued',
+            'output' => 'Pendiente de ser procesado por el agente del servidor.',
+        ]);
+
+        self::dispatch($deployment->id);
+    }
+
+    private function markExpiredBackups(Site $site): void
+    {
+        $site->deployments()
+            ->where('action', 'backup')
+            ->where('status', 'finished')
+            ->latest('finished_at')
+            ->skip($site->backup_retention)
+            ->each(function (Deployment $deployment): void {
+                $deployment->update([
+                    'status' => 'pruned',
+                    'output' => 'Eliminado por la política de retención de respaldos.',
+                ]);
+            });
+    }
+
+    private function saveInspection(Site $site, string $output): void
     {
         preg_match('/__MINIPANEL_ARTISAN__\s*(.*?)\s*__MINIPANEL_NPM__/s', $output, $artisanMatch);
         preg_match('/__MINIPANEL_NPM__\s*(.*?)\s*__MINIPANEL_ENV__/s', $output, $npmMatch);

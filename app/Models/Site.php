@@ -11,6 +11,11 @@ class Site extends Model
 {
     use SoftDeletes;
 
+    protected $attributes = [
+        'backup_enabled' => true,
+        'backup_retention' => 14,
+    ];
+
     protected $fillable = [
         'server_domain', 'pending_domain', 'lifecycle_action', 'lifecycle_token', 'lifecycle_error', 'lifecycle_previous_status', 'trash_group', 'purge_after',
         'parent_site_id',
@@ -18,7 +23,7 @@ class Site extends Model
         'name', 'domain', 'repository', 'deploy_key_public', 'webhook_token', 'webhook_secret', 'branch', 'path', 'php_version', 'node_version', 'php_extensions', 'status',
         'ssl_enabled', 'queue_enabled', 'scheduler_enabled', 'last_deployed_at', 'runtime',
         'artisan_commands', 'npm_scripts', 'environment', 'deploy_commands', 'nginx_config', 'last_inspected_at', 'queue_status', 'scheduler_status',
-        'aliases', 'health_url', 'health_status', 'dns_results', 'dns_checked_at', 'health_checked_at', 'last_backup_at', 'last_backup_path', 'current_commit', 'previous_commit', 'last_webhook_at',
+        'aliases', 'health_url', 'health_status', 'dns_results', 'dns_checked_at', 'health_checked_at', 'last_backup_at', 'last_backup_path', 'backup_enabled', 'backup_retention', 'backup_last_verified_at', 'current_commit', 'previous_commit', 'last_webhook_at',
     ];
 
     protected function casts(): array
@@ -40,6 +45,9 @@ class Site extends Model
             'dns_checked_at' => 'datetime',
             'dns_results' => 'array',
             'last_backup_at' => 'datetime',
+            'backup_enabled' => 'boolean',
+            'backup_retention' => 'integer',
+            'backup_last_verified_at' => 'datetime',
             'last_webhook_at' => 'datetime',
             'webhook_secret' => 'encrypted',
             'php_extensions' => 'array',

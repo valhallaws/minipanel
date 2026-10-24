@@ -104,6 +104,21 @@ class HostingTest extends TestCase
         Queue::assertPushed(RunDeployment::class, fn ($job) => $job->deploymentId === $verification->id);
     }
 
+    public function test_backup_policy_can_be_configured_per_site(): void
+    {
+        $site = $this->site();
+
+        Livewire::actingAs(User::factory()->create())->test(BackupManager::class, ['site' => $site])
+            ->set('backupEnabled', false)
+            ->set('backupRetention', 7)
+            ->call('saveBackupPolicy')
+            ->assertHasNoErrors()
+            ->assertSee('Política de respaldos actualizada.');
+
+        $this->assertFalse($site->fresh()->backup_enabled);
+        $this->assertSame(7, $site->fresh()->backup_retention);
+    }
+
     public function test_hosting_queues_changes_without_prematurely_applying_them(): void
     {
         Queue::fake([RunDeployment::class]);
