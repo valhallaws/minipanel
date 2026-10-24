@@ -13,6 +13,7 @@
     @php($services = $this->managedServices())
     @php($activeServices = collect($services)->filter(fn (string $service): bool => ($serverStatus['Servicio:'.$service] ?? null) === 'active')->count())
     @php($rebootRequired = ($serverStatus['Reinicio requerido'] ?? 'no') === 'sí')
+    <div class="server-general-grid">
     <section class="panel server-overview">
         <div class="section-title"><div><h2>Estado del VPS</h2><p wire:loading.remove wire:target="refreshServerStatus">Consulta manual disponible.</p><p wire:loading wire:target="refreshServerStatus">Leyendo el VPS…</p></div><button class="secondary" wire:click="refreshServerStatus">Actualizar</button></div>
         @if($serverStatus)
@@ -24,6 +25,7 @@
         @else<p class="muted">Cargando estado del servidor…</p>@endif
     </section>
     <section class="panel server-settings" id="general"><div class="section-title"><div><h2>Identidad y hora</h2><p>Cambia la identidad de red del VPS y su zona horaria.</p></div></div><div class="server-settings-grid"><div><label>Hostname del VPS<input wire:model="serverHostname" placeholder="vps.ejemplo.com" autocomplete="off" autocapitalize="none" spellcheck="false"></label>@error('serverHostname')<p class="error">{{ $message }}</p>@enderror<div class="button-row"><button class="secondary" wire:click="prepareServerAction('hostname')">Cambiar hostname</button></div></div><div><label>Zona horaria<select wire:model="serverTimezone"><option>America/Mexico_City</option><option>America/Tijuana</option><option>America/Cancun</option><option>America/Monterrey</option><option>Etc/UTC</option><option>America/New_York</option><option>Europe/Madrid</option></select></label><div class="button-row"><button class="secondary" wire:click="prepareServerAction('timezone')">Cambiar zona</button><button class="ghost" wire:click="prepareServerAction('sync-clock')">Sincronizar NTP</button></div></div></div><p class="muted server-settings-note">El reloj se mantiene con NTP; sincronizarlo aplica la zona seleccionada y actualiza la hora si es necesario.</p></section>
+    </div>
     @endif
     @if($serverSection === 'security')
     <section class="panel" id="security"><div class="section-title"><div><h2>Seguridad y acceso</h2><p>Controles del perímetro del VPS. Las reglas existentes no se modifican automáticamente.</p></div><button class="secondary" wire:click="refreshSecurityStatus">Actualizar</button></div>
