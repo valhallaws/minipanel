@@ -40,7 +40,7 @@ class OperationsOverviewTest extends TestCase
             ->assertSee('Operación en curso')
             ->assertSee('active.example.test')
             ->assertSee('Operación detenida')
-            ->assertSee('Operaciones detenidas')
+            ->assertSee('Detenidas')
             ->assertSee('Requiere atención')
             ->assertSee('failed.example.test')
             ->assertDontSee('historical.example.test')
